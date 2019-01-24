@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 from parlai.core.teachers import FbDialogTeacher
 from parlai.core.agents import MultiTaskTeacher
@@ -19,6 +19,7 @@ tasks[4] = 'dialog-babi-task4-phone-address'
 tasks[5] = 'dialog-babi-task5-full-dialogs'
 tasks[6] = 'dialog-babi-task6-dstc2'
 
+
 def _path(task, opt):
     # Build the data if it doesn't exist.
     build(opt)
@@ -31,14 +32,18 @@ def _path(task, opt):
         suffix = 'tst'
     elif dt == 'valid':
         suffix = 'dev'
-    datafile = os.path.join(prefix,
-            '{tsk}-{type}.txt'.format(tsk=tasks[int(task)], type=suffix))
+    datafile = os.path.join(
+        prefix,
+        '{tsk}-{type}.txt'.format(tsk=tasks[int(task)], type=suffix)
+    )
 
     if opt['task'].split(':')[2] != '6':
         cands_datafile = os.path.join(prefix, 'dialog-babi-candidates.txt')
     else:
-        cands_datafile = os.path.join(prefix,
-                'dialog-babi-task6-dstc2-candidates.txt')
+        cands_datafile = os.path.join(
+            prefix,
+            'dialog-babi-task6-dstc2-candidates.txt'
+        )
 
     return datafile, cands_datafile
 

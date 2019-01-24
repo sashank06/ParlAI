@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 from parlai.core.teachers import FbDialogTeacher
 from .build_2009 import build as build_2009
@@ -40,17 +40,24 @@ class HalfTeacher(FbDialogTeacher):
 class FullTeacher(HalfTeacher):
     """This version of opensubtitles creates all possible dialog examples."""
     def setup_data(self, path):
+        def rebuild(entries):
+            return [
+                (entries[i][1][0], [entries[i + 1][0]])
+                for i in range(len(entries) - 1)
+            ]
+
+        # this shows conversations in both directions
         alternate = []
         for entry, new in super().setup_data(path):
             if new:
-                for i, e in enumerate(alternate):
+                for i, e in enumerate(rebuild(alternate)):
                     yield e, i == 0
                 alternate.clear()
             else:
                 alternate.append(entry)
             yield entry, new
         if alternate:
-            for i, e in enumerate(alternate):
+            for i, e in enumerate(rebuild(alternate)):
                 yield e, i == 0
 
 
@@ -139,6 +146,7 @@ class V2018NoHistoryTask10kTeacher(Task10kTeacher):
     def __init__(self, opt, shared=None):
         super(V2018NoHistoryTask10kTeacher, self).__init__(
             opt, shared, '2018', False)
+
 
 # Defaults to full teacher (all possible examples)
 class DefaultTeacher(V2018Teacher):

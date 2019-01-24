@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 from parlai.core.thread_utils import SharedTable
 from multiprocessing import Process
 import unittest
@@ -55,7 +55,6 @@ class TestSharedTable(unittest.TestCase):
         except KeyError:
             pass
 
-
     def test_iter_keys(self):
         st = SharedTable({'key': 0, 'ctr': 0.0, 'val': False, 'other': 1})
         assert len(st) == 4
@@ -100,7 +99,10 @@ class TestSharedTable(unittest.TestCase):
         assert len(st) == 1
 
         if torch.cuda.is_available():
-            st = SharedTable({'a': torch.cuda.FloatTensor([1]), 'b': torch.cuda.LongTensor(2)})
+            st = SharedTable({
+                'a': torch.cuda.FloatTensor([1]),
+                'b': torch.cuda.LongTensor(2),
+            })
             assert st['a'][0] == 1.0
             assert len(st) == 2
             assert 'b' in st

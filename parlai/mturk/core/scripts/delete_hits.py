@@ -1,14 +1,14 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import argparse
-import os
 import sys
 
 import parlai.mturk.core.mturk_utils as mturk_utils
+
 
 def main():
     """This script should be used after some error occurs that leaves HITs live
@@ -47,7 +47,6 @@ def main():
     verbose = opt.verbose
     task_group_ids = []
     group_to_hit = {}
-    hits = []
     processed = 0
     found = 0
     spinner_vals = ['-', '\\', '|', '/']
@@ -97,7 +96,7 @@ def main():
                         group_to_hit[group_id][hit['HITId']] = hit['HITStatus']
                         found += 1
                 except IndexError:
-                    pass # This wasn't the right HIT
+                    pass  # This wasn't the right HIT
 
             sys.stdout.write(
                 '\r{} HITs processed, {} active hits'
@@ -184,6 +183,7 @@ def main():
                         len(group_to_hit[task_group_id])
                     )
                 )
+
 
 if __name__ == '__main__':
     main()

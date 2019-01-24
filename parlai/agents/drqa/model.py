@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
@@ -34,7 +34,7 @@ class DocReaderModel(object):
         if state_dict:
             new_state = set(self.network.state_dict().keys())
             for k in list(state_dict['network'].keys()):
-                if not k in new_state:
+                if k not in new_state:
                     del state_dict['network'][k]
             self.network.load_state_dict(state_dict['network'])
 
@@ -86,9 +86,9 @@ class DocReaderModel(object):
 
         # Transfer to GPU
         if self.opt['cuda']:
-            inputs = [Variable(e.cuda(async=True)) for e in ex[:5]]
-            target_s = Variable(ex[5].cuda(async=True))
-            target_e = Variable(ex[6].cuda(async=True))
+            inputs = [Variable(e.cuda(non_blocking=True)) for e in ex[:5]]
+            target_s = Variable(ex[5].cuda(non_blocking=True))
+            target_e = Variable(ex[6].cuda(non_blocking=True))
         else:
             inputs = [Variable(e) for e in ex[:5]]
             target_s = Variable(ex[5])
@@ -122,7 +122,7 @@ class DocReaderModel(object):
 
         # Transfer to GPU
         if self.opt['cuda']:
-            inputs = [Variable(e.cuda(async=True), volatile=True)
+            inputs = [Variable(e.cuda(non_blocking=True), volatile=True)
                       for e in ex[:5]]
         else:
             inputs = [Variable(e, volatile=True) for e in ex[:5]]
@@ -138,6 +138,7 @@ class DocReaderModel(object):
         text = ex[-2]
         spans = ex[-1]
         predictions = []
+        pred_scores = []
         max_len = self.opt['max_len'] or score_s.size(1)
         for i in range(score_s.size(0)):
             scores = torch.ger(score_s[i], score_e[i])
@@ -146,8 +147,9 @@ class DocReaderModel(object):
             s_idx, e_idx = np.unravel_index(np.argmax(scores), scores.shape)
             s_offset, e_offset = spans[i][s_idx][0], spans[i][e_idx][1]
             predictions.append(text[i][s_offset:e_offset])
+            pred_scores.append(np.max(scores))
 
-        return predictions
+        return predictions, pred_scores
 
     def reset_parameters(self):
         # Reset fixed embeddings to original value

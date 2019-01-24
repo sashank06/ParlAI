@@ -1,14 +1,15 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 """Provides utilities useful for multiprocessing."""
 
 from multiprocessing import Lock, RawArray
 from collections.abc import MutableMapping
 import ctypes
 import sys
+
 
 class SharedTable(MutableMapping):
     """Provides a simple shared-memory table of integers, floats, or strings.
@@ -48,7 +49,7 @@ class SharedTable(MutableMapping):
         if init_dict:
             sizes = {typ: 0 for typ in self.types.keys()}
             for k, v in init_dict.items():
-                if 'Tensor' in str(type(v)):
+                if is_tensor(v):
                     # add tensor to tensor dict--don't try to put in rawarray
                     self.tensors[k] = v
                     continue
@@ -134,13 +135,12 @@ class SharedTable(MutableMapping):
 
     def __str__(self):
         """Returns simple dict representation of the mapping."""
-        return '{{{}}}'.format(
-            ', '.join(
-                ['{k}: {v}'.format(k=key, v=self.arrays[typ][idx])
-                for key, (idx, typ) in self.idx.items()] +
-                ['{k}: {v}'.format(k=k, v=v) for k, v in self.tensors.items()]
-            )
-        )
+        lhs = [
+            '{k}: {v}'.format(k=key, v=self.arrays[typ][idx])
+            for key, (idx, typ) in self.idx.items()
+        ]
+        rhs = ['{k}: {v}'.format(k=k, v=v) for k, v in self.tensors.items()]
+        return '{{{}}}'.format(', '.join(lhs + rhs))
 
     def __repr__(self):
         """Returns the object type and memory location with the mapping."""
@@ -149,3 +149,10 @@ class SharedTable(MutableMapping):
 
     def get_lock(self):
         return self.lock
+
+
+def is_tensor(v):
+    if type(v).__module__.startswith('torch'):
+        import torch
+        return torch.is_tensor(v)
+    return False

@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 from parlai.core.params import ParlaiParser
 from parlai.messenger.tasks.chatbot.worlds import \
     MessengerBotChatTaskWorld
@@ -10,8 +10,6 @@ from parlai.messenger.core.messenger_manager import MessengerManager
 from parlai.messenger.core.worlds import SimpleMessengerOverworld as \
     MessengerOverworld
 from parlai.core.agents import create_agent, create_agent_from_shared
-import os
-import importlib
 
 
 def main():
@@ -19,7 +17,7 @@ def main():
     argparser.add_messenger_args()
     opt = argparser.parse_args()
     print(opt)
-    if opt['model'] == None and opt['model_file'] == None:
+    if opt['model'] is None and opt['model_file'] is None:
         print("Model must be specified")
         return
     bot = create_agent(opt)

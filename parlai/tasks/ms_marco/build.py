@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 # Download and build the data if it does not exist.
 import gzip
 import json
@@ -36,10 +36,15 @@ def create_fb_format(outpath, dtype, inpath):
         dic = json.loads(line)
         lq = dic["query"]
         if dtype != "test":
-            ans = "|".join([d["passage_text"] for d in dic["passages"] if d["is_selected"] == 1])
-            cands = "|".join([d["passage_text"] for d in dic["passages"] if d["is_selected"] == 0])
+            ans = "|".join([
+                d["passage_text"] for d in dic["passages"] if d["is_selected"] == 1
+            ])
+            cands = "|".join([
+                d["passage_text"] for d in dic["passages"] if d["is_selected"] == 0]
+            )
             cands = ans + "|" + cands
-            if ans == "": continue  # if no true label, skip for now
+            if ans == "":
+                continue  # if no true label, skip for now
         else:  # ground truth for test data is not available yet
             ans = ""
             cands = "|".join([d["passage_text"] for d in dic["passages"]])

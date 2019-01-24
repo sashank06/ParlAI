@@ -1,58 +1,64 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 # Author: Saizheng Zhang, work at Facebook AI Research, NYC
-''' Contains generative models described in the paper Personalizing Dialogue
+"""Contains generative models described in the paper Personalizing Dialogue
 Agents: I have a dog, do you have pets too? `(Zhang et al. 2018)
 <https://arxiv.org/pdf/1801.07243.pdf>`_.
-'''
-# Might need to do these:
-# pip install torchtext
-# pip install stop-words
 
+Might need to do these:
+pip install torchtext
+pip install stop-words
+"""
 import os
 import pickle
 import copy
 import random
 import re
-import argparse
 import time
 import math
-import numpy as np
 
 from parlai.core.agents import Agent
 from parlai.core.dict import DictionaryAgent
 from parlai.core.metrics import _f1_score
-from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
+from parlai.core.utils import round_sigfigs
 from torch.autograd import Variable
+from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 from torch import optim
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
-import torchtext.vocab as vocab
-Glove = vocab.GloVe(name='840B', dim=300)
+try:
+    import torchtext.vocab as vocab
+except ImportError:
+    raise ImportError('Please `pip install torchtext`')
 
-
-import operator
 cos = torch.nn.CosineSimilarity(dim=0, eps=1e-6)
 
+from parlai.core.params import ParlaiParser
+ParlaiParser()  # instantiate unused parser to set PARLAI_HOME
 
 stopwords_customized = []
-with open('projects/personachat/stopwords.txt', 'r') as handle:
+with open(os.path.join(os.environ['PARLAI_HOME'], 'projects', 'personachat', 'stopwords.txt'), 'r') as handle:
     stopwords_customized = []
     for line in handle:
         if line == '\n':
-           pass
+            pass
         else:
-           stopwords_customized.append(line.replace('\n', ''))
+            stopwords_customized.append(line.replace('\n', ''))
 
-from stop_words import get_stop_words
+try:
+    from stop_words import get_stop_words
+except ImportError:
+    raise ImportError('Please `pip install stop-words`')
+
 STOP_WORDS = get_stop_words('en') + [',', '.', '!', '?']
 STOP_WORDS.remove('not')
 STOP_WORDS = STOP_WORDS + stopwords_customized
+
 
 def tokenize(self, sent):
     words = [w.lower() for w in re.findall(r"[\w']+|[.,!?;:\']", sent)]
@@ -109,7 +115,7 @@ class Seq2seqAgent(Agent):
                            help='rank candidates if available. this is done by'
                                 ' computing the mean score per token for each '
                                 'candidate and selecting the highest scoring.')
-        agent.add_argument('-tr', '--truncate', type=int, default=24,
+        agent.add_argument('-tr', '--truncate', type=int, default=100,
                            help='truncate input & output lengths to speed up '
                            'training (may reduce accuracy). This fixes all '
                            'input and output to have a maximum length and to '
@@ -167,14 +173,16 @@ class Seq2seqAgent(Agent):
                 print('[ Using CUDA ]')
                 torch.cuda.set_device(opt['gpu'])
 
+            self.dict = DictionaryAgent(opt)
+
+            states = None
             if opt.get('model_file') and os.path.isfile(opt['model_file']):
                 # load model parameters if available
                 print('Loading existing model params from ' + opt['model_file'])
-                new_opt, self.states = self.load(opt['model_file'])
+                new_opt, states = self.load(opt['model_file'])
                 # override options with stored ones
                 opt = self.override_opt(new_opt)
 
-            self.dict = DictionaryAgent(opt)
             if opt.get('personachat_symbol_words', None):
                 for w in opt['personachat_symbol_words']:
                     self.dict.add_to_dict([w])
@@ -225,9 +233,23 @@ class Seq2seqAgent(Agent):
                                    padding_idx=self.NULL_IDX,
                                    scale_grad_by_freq=False)
             self.lt.weight[1:].data.normal_(0, 0.1)
-            for w in self.dict.freq:
-                if w in Glove.stoi:
-                    self.lt.weight.data[self.dict[w]] = Glove.vectors[Glove.stoi[w]]
+
+            if not states:
+                # initializing model from scratch, load glove vectors
+                Glove = vocab.GloVe(
+                    name='840B',
+                    dim=300,
+                    cache=os.path.join(
+                        os.environ['PARLAI_HOME'],
+                        'data',
+                        'models',
+                        'glove_vectors'
+                    )
+                )
+                for w in self.dict.freq:
+                    if w in Glove.stoi:
+                        self.lt.weight.data[self.dict[w]] = Glove.vectors[Glove.stoi[w]]
+
             # encoder captures the input text
             enc_class = Seq2seqAgent.ENC_OPTS[opt['encoder']]
             self.encoder = enc_class(emb, hsz, opt['numlayers'], dropout=self.dropout)
@@ -285,9 +307,9 @@ class Seq2seqAgent(Agent):
                 if hasattr(self, attn_name):
                     self.optims[attn_name] = optim_class(getattr(self, attn_name).parameters(), lr=lr)
 
-            if hasattr(self, 'states'):
+            if states:
                 # set loaded states if applicable
-                self.set_states(self.states)
+                self.set_states(states)
 
             if self.use_cuda:
                 self.cuda()
@@ -328,15 +350,15 @@ class Seq2seqAgent(Agent):
 
     def cuda(self):
         """Push parameters to the GPU."""
-        self.START_TENSOR = self.START_TENSOR.cuda(async=True)
-        self.END_TENSOR = self.END_TENSOR.cuda(async=True)
-        self.zeros = self.zeros.cuda(async=True)
-        self.xs = self.xs.cuda(async=True)
-        self.ys = self.ys.cuda(async=True)
-        self.zs = self.zs.cuda(async=True)
-        self.cands = self.cands.cuda(async=True)
-        self.cand_scores = self.cand_scores.cuda(async=True)
-        self.cand_lengths = self.cand_lengths.cuda(async=True)
+        self.START_TENSOR = self.START_TENSOR.cuda()
+        self.END_TENSOR = self.END_TENSOR.cuda()
+        self.zeros = self.zeros.cuda()
+        self.xs = self.xs.cuda()
+        self.ys = self.ys.cuda()
+        self.zs = self.zs.cuda()
+        self.cands = self.cands.cuda()
+        self.cand_scores = self.cand_scores.cuda()
+        self.cand_lengths = self.cand_lengths.cuda()
         self.criterion.cuda()
         self.lt.cuda()
         self.encoder.cuda()
@@ -358,6 +380,11 @@ class Seq2seqAgent(Agent):
         elif self.attention == 'general':
             self.attn.cuda()
             self.attn_combine.cuda()
+        for optimizer in self.optims.values():
+            for state in optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.cuda()
 
     def hidden_to_idx(self, hidden, is_training=False):
         """Convert hidden state vectors into indices into the dictionary."""
@@ -513,12 +540,12 @@ class Seq2seqAgent(Agent):
                 token = self.v2t([(preds+1).data[b]])
                 output_lines[b].append(token)
 
-        self.loss += loss.data.cpu().numpy()[0]
+        self.loss += loss.cpu().item()
         self.loss_c += 1
         loss.backward()
         self.update_params()
 
-        if random.random() < 0.1 and not self.interactive_mode:
+        if random.random() < 0.01 and not self.interactive_mode:
             # sometimes output a prediction for debugging
             print('prediction:', ' '.join(output_lines[0]),
                   '\nlabel:', self.dict.vec2txt(ys.data[0]))
@@ -546,8 +573,8 @@ class Seq2seqAgent(Agent):
             xes = self.lt(y).unsqueeze(0)
         n_zs = zs.ne(self.NULL_IDX).float().sum()
         log_perp = (-log_perp).sum()
-        self.log_perp += log_perp.cpu().data.numpy()[0]
-        self.n_log_perp += n_zs.cpu().data.numpy()[0]
+        self.log_perp += log_perp.cpu().item()
+        self.n_log_perp += n_zs.cpu().item()
 
 
     def _decode_only(self, batchsize, xes, ys, encoder_output, hidden, attn_mask, zs):
@@ -582,7 +609,7 @@ class Seq2seqAgent(Agent):
                     else:
                         output_lines[b].append(token)
 
-        if random.random() < 0.1 and not self.interactive_mode:
+        if random.random() < 0.01 and not self.interactive_mode:
             # sometimes output a prediction for debugging
             print('prediction:', ' '.join(output_lines[0]))
 
@@ -732,10 +759,11 @@ class Seq2seqAgent(Agent):
         for i, x in enumerate(parsed):
             for j, idx in enumerate(x):
                 xs[i][j] = idx
+
         if self.use_cuda:
             # copy to gpu
             self.xs.resize_(xs.size())
-            self.xs.copy_(xs, async=True)
+            self.xs.copy_(xs, )
             xs = Variable(self.xs)
         else:
             xs = Variable(xs)
@@ -759,7 +787,7 @@ class Seq2seqAgent(Agent):
             if self.use_cuda:
                 # copy to gpu
                 self.ys.resize_(ys.size())
-                self.ys.copy_(ys, async=True)
+                self.ys.copy_(ys, )
                 ys = Variable(self.ys)
             else:
                 ys = Variable(ys)
@@ -784,7 +812,7 @@ class Seq2seqAgent(Agent):
             if self.use_cuda:
                 # copy to gpu
                 self.zs.resize_(zs.size())
-                self.zs.copy_(zs, async=True)
+                self.zs.copy_(zs, )
                 zs = Variable(self.zs)
             else:
                 zs = Variable(zs)
@@ -818,7 +846,7 @@ class Seq2seqAgent(Agent):
                 if self.use_cuda:
                     # copy to gpu
                     self.cands.resize_(cands.size())
-                    self.cands.copy_(cands, async=True)
+                    self.cands.copy_(cands, )
                     cands = Variable(self.cands)
                 else:
                     cands = Variable(cands)
@@ -849,8 +877,6 @@ class Seq2seqAgent(Agent):
 
         if self.opt['datatype'] in ['valid', 'test'] and self.opt['personachat_interact']:
             print('MODEL:' + ' '.join(predictions[0]))
-            symbol_words = ['_s{}_'.format(i) for i in range(20)]
-
             print('TRUE :' + observations[0]['eval_labels'][0])
 
         for i in range(len(predictions)):
@@ -912,7 +938,7 @@ class Seq2seqAgent(Agent):
     def load(self, path):
         """Return opt and model states."""
         with open(path, 'rb') as read:
-            model = torch.load(read)
+            model = torch.load(read, map_location=lambda cpu, _: cpu)
 
         return model['opt'], model
 
@@ -955,6 +981,7 @@ class PersonachatSeqseqAgentBasic(Seq2seqAgent):
     def __init__(self, opt, shared=None):
         self.usepersona = opt['task'].split(':', 1)[1]
         self.usepreviousdialog = opt['personachat_useprevdialog']
+        self.batch_idx = shared and shared.get('batchindex') or 0
         super().__init__(opt, shared)
 
     def observe(self, obs):
@@ -977,12 +1004,11 @@ class PersonachatSeqseqAgentBasic(Seq2seqAgent):
                         t = t.replace('your persona: ', '').replace('their persona: ', '')
                         self.persona_given += t +'\n'
             else:
-                batch_idx = self.opt.get('batchindex', 0)
                 if self.usepreviousdialog:
                     self.prev_dialog += self.last_obs if self.last_obs == '' else self.last_obs + '\n'
-                    if self.answers[batch_idx] is not None and self.prev_dialog != '':
-                        self.prev_dialog += self.answers[batch_idx] + '\n'
-                    self.answers[batch_idx] = None
+                    if self.answers[self.batch_idx] is not None and self.prev_dialog != '':
+                        self.prev_dialog += self.answers[self.batch_idx] + '\n'
+                    self.answers[self.batch_idx] = None
             observation['text'] = text_split[-1]
             self.last_obs = observation['text']
             self.episode_done = observation['episode_done']
@@ -1043,7 +1069,7 @@ class PersonachatSeqseqAgentSplit(Agent):
                            help='rank candidates if available. this is done by'
                                 ' computing the mean score per token for each '
                                 'candidate and selecting the highest scoring.')
-        agent.add_argument('-tr', '--truncate', type=int, default=24,
+        agent.add_argument('-tr', '--truncate', type=int, default=100,
                            help='truncate input & output lengths to speed up '
                            'training (may reduce accuracy). This fixes all '
                            'input and output to have a maximum length and to '
@@ -1092,13 +1118,19 @@ class PersonachatSeqseqAgentSplit(Agent):
             help='init use s2s model')
         agent.add_argument('--interactive-mode', type=bool, default=False,
             help='helps print nicer text during interactive mode')
+        agent.add_argument('--use-persona', type=str, default='self',
+            choices=['self', 'none', 'other', 'both'],
+            help='if task does not specify persona, specify here')
 
 
     def __init__(self, opt, shared=None):
         """Set up model if shared params not set, otherwise no work to do."""
         super().__init__(opt, shared)
         self.interactive_mode = opt['interactive_mode']
-        self.usepersona = opt['task'].split(':', 1)[1]
+        try:
+            self.usepersona = opt['task'].split(':', 1)[1]
+        except:
+            self.usepersona = opt['use_persona']
         self.usepreviousdialog = opt['personachat_useprevdialog']
         self.attnsentlevel = opt['personachat_attnsentlevel']
         self.sharelt = opt['personachat_sharelt']
@@ -1106,6 +1138,8 @@ class PersonachatSeqseqAgentSplit(Agent):
         self.newsetting = opt['personachat_newsetting']
         self.embshareonly_pm_dec = opt['personachat_embshareonly_pm_dec']
         self.s2sinit = opt['personachat_s2sinit']
+        self.batch_idx = shared and shared.get('batchindex') or 0
+        self.metrics = {'loss': 0, 'num_tokens': 0}
 
         if shared:
             self.answers = shared['answers']
@@ -1136,10 +1170,14 @@ class PersonachatSeqseqAgentSplit(Agent):
                 print('[ Using CUDA ]')
                 torch.cuda.set_device(opt['gpu'])
 
+            self.dict = DictionaryAgent(opt)
+
+            states = None
             if opt.get('model_file') and os.path.isfile(opt['model_file']):
                 # load model parameters if available
+                opt['model_file'] = opt['model_file']
                 print('Loading existing model params from ' + opt['model_file'])
-                new_opt, self.states = self.load(opt['model_file'])
+                new_opt, states = self.load(opt['model_file'])
                 # override options with stored ones
                 opt = self.override_opt(new_opt)
                 self.usepreviousdialog = opt['personachat_useprevdialog']
@@ -1150,27 +1188,26 @@ class PersonachatSeqseqAgentSplit(Agent):
                 self.embshareonly_pm_dec = opt['personachat_embshareonly_pm_dec']
                 self.s2sinit = opt['personachat_s2sinit']
 
-            self.dict = DictionaryAgent(opt)
             if opt.get('personachat_symbol_words', None):
                 for w in opt['personachat_symbol_words']:
                     self.dict.add_to_dict([w])
             self.id = 'Seq2Seq'
             # we use START markers to start our output
             self.START = self.dict.start_token
-            self.START_TENSOR = torch.LongTensor(self.dict.parse(self.START))
+            self.START_TENSOR = torch.LongTensor([self.dict[self.START]])
             # we use END markers to end our output
             self.END = self.dict.end_token
-            self.END_TENSOR = torch.LongTensor(self.dict.parse(self.END))
+            self.END_TENSOR = torch.LongTensor([self.dict[self.END]])
             # get index of null token from dictionary (probably 0)
-            self.NULL_IDX = self.dict.txt2vec(self.dict.null_token)[0]
+            self.NULL_IDX = self.dict[self.dict.null_token]
 
             # reorder dictionary tokens
-            self.dict.ind2tok[1] = '__END__'
-            self.dict.tok2ind['__END__'] = 1
-            self.dict.ind2tok[2] = '__UNK__'
-            self.dict.tok2ind['__UNK__'] = 2
-            self.dict.ind2tok[3] = '__START__'
-            self.dict.tok2ind['__START__'] = 3
+            self.dict.ind2tok[1] = self.dict.end_token
+            self.dict.tok2ind[self.dict.end_token] = 1
+            self.dict.ind2tok[2] = self.dict.unk_token
+            self.dict.tok2ind[self.dict.unk_token] = 2
+            self.dict.ind2tok[3] = self.dict.start_token
+            self.dict.tok2ind[self.dict.start_token] = 3
 
             # store important params directly
             hsz = opt['hiddensize']
@@ -1207,18 +1244,12 @@ class PersonachatSeqseqAgentSplit(Agent):
                                    padding_idx=self.NULL_IDX,
                                    scale_grad_by_freq=False)
             self.lt.weight[1:].data.normal_(0, 0.1)
-            for w in self.dict.freq:
-                if w in Glove.stoi:
-                    self.lt.weight.data[self.dict[w]] = Glove.vectors[Glove.stoi[w]]
 
             # lookup table for persona embedding
             self.lt_per = nn.Embedding(len(self.dict), emb,
                                        padding_idx=self.NULL_IDX,
                                        scale_grad_by_freq=False)
             self.lt_per.weight[1:].data.uniform_(0, 1)
-            for w in self.dict.freq:
-                if w in Glove.stoi:
-                    self.lt_per.weight.data[self.dict[w]] = Glove.vectors[Glove.stoi[w]]
             if self.sharelt:
                 self.lt_per.weight = self.lt.weight
 
@@ -1228,30 +1259,54 @@ class PersonachatSeqseqAgentSplit(Agent):
                                            padding_idx=self.NULL_IDX,
                                            scale_grad_by_freq=False)
                 self.lt_enc.weight[1:].data.uniform_(0, 1)
-                for w in self.dict.freq:
-                    if w in Glove.stoi:
-                        self.lt_enc.weight.data[self.dict[w]] = Glove.vectors[Glove.stoi[w]]
-
-            self.lt_meta = copy.deepcopy(self.lt_per)
-            self.lt_meta.weight.requires_grad = False
-
-            #lookup table for reweight
-            self.lt_reweight = nn.Embedding(len(self.dict), 1,
-                                            padding_idx=self.NULL_IDX,
-                                            scale_grad_by_freq=False)
-            for w in self.dict.freq:
-                self.lt_reweight.weight.data[self.dict[w]] = self.f_word(w)
-
-            self.lt_reweight_meta = copy.deepcopy(self.lt_reweight)
-            self.lt_reweight_meta.weight.requires_grad = False
 
             #lookup table for rescale perplexity
             self.lt_rescaleperp = nn.Embedding(len(self.dict), 1,
                                                padding_idx=self.NULL_IDX,
                                                scale_grad_by_freq=False)
-            for w in self.dict.freq:
-                self.lt_rescaleperp.weight.data[self.dict[w]] = self.f_word_2(w, usetop=True, th=3000)
 
+            #lookup table for reweight
+            self.lt_reweight = nn.Embedding(len(self.dict), 1,
+                                            padding_idx=self.NULL_IDX,
+                                            scale_grad_by_freq=False)
+
+            if not states:
+                # initializing model from scratch, load glove vectors
+                Glove = vocab.GloVe(
+                    name='840B',
+                    dim=300,
+                    cache=os.path.join(
+                        os.environ['PARLAI_HOME'],
+                        'data',
+                        'models',
+                        'glove_vectors'
+                    )
+                )
+                for w in self.dict.freq:
+                    if w in Glove.stoi:
+                        self.lt.weight.data[self.dict[w]] = Glove.vectors[Glove.stoi[w]]
+
+                if not self.sharelt:
+                    for w in self.dict.freq:
+                        if w in Glove.stoi:
+                            self.lt_per.weight.data[self.dict[w]] = Glove.vectors[Glove.stoi[w]]
+
+                if self.embshareonly_pm_dec:
+                    for w in self.dict.freq:
+                        if w in Glove.stoi:
+                            self.lt_enc.weight.data[self.dict[w]] = Glove.vectors[Glove.stoi[w]]
+
+                for w in self.dict.freq:
+                    self.lt_reweight.weight.data[self.dict[w]] = self.f_word(Glove, w)
+
+                for w in self.dict.freq:
+                    self.lt_rescaleperp.weight.data[self.dict[w]] = self.f_word_2(Glove, w, usetop=True, th=3000)
+
+            self.lt_meta = copy.deepcopy(self.lt_per)
+            self.lt_meta.weight.requires_grad = False
+
+            self.lt_reweight_meta = copy.deepcopy(self.lt_reweight)
+            self.lt_reweight_meta.weight.requires_grad = False
 
             # encoder captures the input text
             enc_class = Seq2seqAgent.ENC_OPTS[opt['encoder']]
@@ -1334,9 +1389,9 @@ class PersonachatSeqseqAgentSplit(Agent):
                 if hasattr(self, attn_name):
                     self.optims[attn_name] = optim_class(getattr(self, attn_name).parameters(), lr=lr)
 
-            if hasattr(self, 'states'):
+            if states:
                 # set loaded states if applicable
-                self.set_states(self.states)
+                self.set_states(states)
 
             if self.s2sinit and self.sharelt:
                 with open('s2s_opt.pkl', 'rb') as handle:
@@ -1386,16 +1441,16 @@ class PersonachatSeqseqAgentSplit(Agent):
 
     def cuda(self):
         """Push parameters to the GPU."""
-        self.START_TENSOR = self.START_TENSOR.cuda(async=True)
-        self.END_TENSOR = self.END_TENSOR.cuda(async=True)
-        self.zeros = self.zeros.cuda(async=True)
-        self.xs = self.xs.cuda(async=True)
-        self.xs_persona = self.xs_persona.cuda(async=True)
-        self.ys = self.ys.cuda(async=True)
-        self.zs = self.zs.cuda(async=True)
-        self.cands = self.cands.cuda(async=True)
-        self.cand_scores = self.cand_scores.cuda(async=True)
-        self.cand_lengths = self.cand_lengths.cuda(async=True)
+        self.START_TENSOR = self.START_TENSOR.cuda()
+        self.END_TENSOR = self.END_TENSOR.cuda()
+        self.zeros = self.zeros.cuda()
+        self.xs = self.xs.cuda()
+        self.xs_persona = self.xs_persona.cuda()
+        self.ys = self.ys.cuda()
+        self.zs = self.zs.cuda()
+        self.cands = self.cands.cuda()
+        self.cand_scores = self.cand_scores.cuda()
+        self.cand_lengths = self.cand_lengths.cuda()
         self.persona_gate.cuda()
         self.persona_gate_m.cuda()
         self.criterion.cuda()
@@ -1429,6 +1484,11 @@ class PersonachatSeqseqAgentSplit(Agent):
             if self.opt['personachat_attnsentlevel']:
                 self.attn_h2attn.cuda()
             self.attn_combine.cuda()
+        for optimizer in self.optims.values():
+            for state in optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.cuda()
 
     def hidden_to_idx(self, hidden, is_training=False, topk=False):
         """Convert hidden state vectors into indices into the dictionary."""
@@ -1477,8 +1537,11 @@ class PersonachatSeqseqAgentSplit(Agent):
         shared['dictionary'] = self.dict
         return shared
 
-    def f_word(self, word, ifvector=True):
-        stop_words = STOP_WORDS + ['__END__', '__NULL__', '__START__', '__UNK__']
+    def f_word(self, Glove, word, ifvector=True):
+        stop_words = STOP_WORDS + [
+            self.dict.start_token, self.dict.unk_token, self.dict.end_token,
+            self.dict.null_token,
+        ]
         w = word
         if w in stop_words:
             return 0.
@@ -1490,8 +1553,11 @@ class PersonachatSeqseqAgentSplit(Agent):
         value = 1.0 / (1.0 + math.log(1.0 + f_w))
         return value
 
-    def f_word_2(self, word, usetop=True, th=500):
-        stop_words = ['__END__', '__NULL__', '__START__', '__UNK__']
+    def f_word_2(self, Glove, word, usetop=True, th=500):
+        stop_words = [
+            self.dict.start_token, self.dict.unk_token, self.dict.end_token,
+            self.dict.null_token,
+        ]
         w = word
         if w in stop_words:
             return 0.
@@ -1517,7 +1583,7 @@ class PersonachatSeqseqAgentSplit(Agent):
            self.observation = observation
            self.episode_done = observation['episode_done']
            return observation
-        else:
+        elif 'text' in observation:
             if self.episode_done == True:
                 self.prev_dialog = ''
                 self.last_obs = ''
@@ -1530,12 +1596,11 @@ class PersonachatSeqseqAgentSplit(Agent):
                         t = t.replace('your persona: ', '').replace('their persona: ', '')
                         self.persona_given += t +'\n'
             else:
-                batch_idx = self.opt.get('batchindex', 0)
                 if self.usepreviousdialog:
                     self.prev_dialog += self.last_obs if self.last_obs == '' else self.last_obs + '\n'
-                    if self.answers[batch_idx] is not None and self.prev_dialog != '':
-                        self.prev_dialog += self.answers[batch_idx] + '\n'
-                    self.answers[batch_idx] = None
+                    if self.answers[self.batch_idx] is not None and self.prev_dialog != '':
+                        self.prev_dialog += self.answers[self.batch_idx] + '\n'
+                    self.answers[self.batch_idx] = None
             observation['text'] = text_split[-1]
             self.last_obs = observation['text']
             self.episode_done = observation['episode_done']
@@ -1544,6 +1609,9 @@ class PersonachatSeqseqAgentSplit(Agent):
 
             if len(observation['persona']) == 0:
                 observation['persona'] = '__START__'
+            self.observation = observation
+            return observation
+        else:
             self.observation = observation
             return observation
 
@@ -1563,7 +1631,6 @@ class PersonachatSeqseqAgentSplit(Agent):
             xes = xes * f_xes
             xes = xes.sum(dim=2)
 
-            ys_size = ys.size()
             yes = self.lt_meta(ys)
             f_yes = self.lt_reweight_meta(ys)
             f_yes_norm = f_yes.sum(1).unsqueeze(1)
@@ -1608,7 +1675,6 @@ class PersonachatSeqseqAgentSplit(Agent):
             return xes, None, guide_indices
 
         batchsize = len(xs)
-        x_lens = [x for x in torch.sum((xs>0).int(), dim=1).data]
 
         # first encode context
         xes = self.lt(xs)
@@ -1616,17 +1682,14 @@ class PersonachatSeqseqAgentSplit(Agent):
         if self.zeros.size(1) != batchsize:
             self.zeros.resize_(self.num_layers * self.num_dirs, batchsize, self.hidden_size).fill_(0)
         h0 = Variable(self.zeros)
-        xes_packed = pack_padded_sequence(xes.transpose(0, 1), x_lens)
         xes = xes.transpose(0,1)
 
         if type(self.encoder_persona) == nn.LSTM:
-            encoder_output_packed, hidden = self.encoder_persona(xes, (h0, h0))
-            encoder_output, _ = pad_packed_sequence(encoder_output_packed)
+            encoder_output, hidden = self.encoder_persona(xes, (h0, h0))
             if type(self.decoder) != nn.LSTM:
                 hidden = hidden[0]
         else:
-            encoder_output_packed, hidden = self.encoder(xes_packed, h0)
-            encoder_output, _ = pad_packed_sequence(encoder_output_packed)
+            encoder_output, hidden = self.encoder(xes, h0)
             if type(self.decoder) == nn.LSTM:
                 hidden = (hidden, h0)
         encoder_output = encoder_output.transpose(0, 1)
@@ -1644,7 +1707,6 @@ class PersonachatSeqseqAgentSplit(Agent):
     def _encode(self, xs, is_training=False):
         """Call encoder and return output and hidden states."""
         batchsize = len(xs)
-        x_lens = [x for x in torch.sum((xs>0).int(), dim=1).data]
 
         # first encode context
         if self.embshareonly_pm_dec:
@@ -1652,7 +1714,6 @@ class PersonachatSeqseqAgentSplit(Agent):
         else:
             xes = self.lt(xs)
         xes = F.dropout(xes, p=2*self.dropout, training=is_training)
-        xes_packed = pack_padded_sequence(xes.transpose(0, 1), x_lens)
 
         if self.zeros.size(1) != batchsize:
             self.zeros.resize_(self.num_layers, batchsize, self.hidden_size).fill_(0)
@@ -1664,7 +1725,7 @@ class PersonachatSeqseqAgentSplit(Agent):
             if type(self.decoder) != nn.LSTM:
                 hidden = hidden[0]
         else:
-            encoder_output, hidden = self.encoder(xes_packed, h0)
+            encoder_output, hidden = self.encoder(xes, h0)
             if type(self.decoder) == nn.LSTM:
                 hidden = (hidden, h0)
         encoder_output = encoder_output.transpose(0, 1)
@@ -1751,12 +1812,12 @@ class PersonachatSeqseqAgentSplit(Agent):
                 loss_guide += loss_guidesoftmax
 
             if self.opt['personachat_printattn']:
-                attn_weights = [n for n in attn_weights.cpu().data.numpy()[0]]
+                attn_weights = [n for n in attn_weights.cpu().item()]
                 if self.opt['personachat_attnsentlevel']:
                     attn_words = [' '.join([w for w in self.dict.tokenize(self.dict.vec2txt(per))]) for per in self.parsed[0]]
                 else:
                     attn_words = [w for w in self.dict.tokenize(self.dict.vec2txt(self.parsed[0]))]
-                word_pred = self.dict[int(y.cpu().data.numpy()[0])]
+                word_pred = self.dict[int(y.cpu().item())]
                 attn_w_visual_tmp.append((word_pred, attn_weights, attn_words))
 
             # use the true token as the next input instead of predicted
@@ -1777,14 +1838,14 @@ class PersonachatSeqseqAgentSplit(Agent):
                 pickle.dump(self.attn_w_visual_list, handle)
             self.printattn_time = time.time()
 
-        self.loss += loss.data.cpu().numpy()[0]
+        self.loss += loss.cpu().item()
         if hasattr(self, 'loss_guide'):
-            self.loss_guide += loss_guide.data.cpu().numpy()[0]
+            self.loss_guide += loss_guide.cpu().item()
         self.loss_c += 1
         loss.backward()
         self.update_params()
 
-        if random.random() < 0.1 and not self.interactive_mode:
+        if random.random() < 0.01 and not self.interactive_mode:
             # sometimes output a prediction for debugging
             print('prediction:', ' '.join(output_lines[0]),
                   '\nlabel:', self.dict.vec2txt(ys.data[0]))
@@ -1822,8 +1883,10 @@ class PersonachatSeqseqAgentSplit(Agent):
         else:
             n_zs = zs.ne(self.NULL_IDX).float().sum()
         log_perp = (-log_perp).sum()
-        self.log_perp += log_perp.cpu().data.numpy()[0]
-        self.n_log_perp += n_zs.cpu().data.numpy()[0]
+        self.log_perp += log_perp.cpu().item()
+        self.n_log_perp += n_zs.cpu().item()
+        self.metrics['loss'] += log_perp.cpu().item()
+        self.metrics['num_tokens'] += n_zs.cpu().item()
 
 
     def _decode_only(self, batchsize, xes, ys, encoder_output_persona, hidden_persona, hidden, attn_mask, zs):
@@ -1882,15 +1945,14 @@ class PersonachatSeqseqAgentSplit(Agent):
             for b in range(batchsize):
                 if not done[b]:
                     # only add more tokens for examples that aren't done yet
-                    token = self.v2t([(preds + 1).data[b]])
-                    if token == self.END:
-                        # if we produced END, we're done
+                    pred_idx = (preds + 1)[b].item()
+                    if pred_idx == self.dict[self.END]:
                         done[b] = True
                         total_done += 1
-                    else:
-                        output_lines[b].append(token)
+                    elif pred_idx != self.dict[self.START]:
+                        output_lines[b].append(self.dict[pred_idx])
 
-        if random.random() < 0.1 and not self.interactive_mode:
+        if random.random() < 1 and not self.interactive_mode:
             # sometimes output a prediction for debugging
             print('prediction:', ' '.join(output_lines[0]))
 
@@ -2073,10 +2135,10 @@ class PersonachatSeqseqAgentSplit(Agent):
                     xs_persona[i][j][:len(p)] = torch.LongTensor(p)
             if self.use_cuda:
                 self.xs_persona.resize_(xs_persona.size())
-                self.xs_persona.copy_(xs_persona, async=True)
+                self.xs_persona.copy_(xs_persona, )
                 xs_persona = Variable(self.xs_persona)
             else:
-                xs_persona = parsed_persona
+                xs_persona = Variable(xs_persona)
         else:
             max_x_len = max([len(x) for x in parsed_persona])
             xs_persona = torch.LongTensor(batchsize, max_x_len).fill_(self.NULL_IDX)
@@ -2087,7 +2149,7 @@ class PersonachatSeqseqAgentSplit(Agent):
             if self.use_cuda:
                 # copy to gpu
                 self.xs_persona.resize_(xs_persona.size())
-                self.xs_persona.copy_(xs_persona, async=True)
+                self.xs_persona.copy_(xs_persona, )
                 xs_persona = Variable(self.xs_persona)
             else:
                 xs_persona = Variable(xs_persona)
@@ -2104,7 +2166,7 @@ class PersonachatSeqseqAgentSplit(Agent):
         if self.use_cuda:
             # copy to gpu
             self.xs.resize_(xs.size())
-            self.xs.copy_(xs, async=True)
+            self.xs.copy_(xs, )
             xs = Variable(self.xs)
         else:
             xs = Variable(xs)
@@ -2128,7 +2190,7 @@ class PersonachatSeqseqAgentSplit(Agent):
             if self.use_cuda:
                 # copy to gpu
                 self.ys.resize_(ys.size())
-                self.ys.copy_(ys, async=True)
+                self.ys.copy_(ys, )
                 ys = Variable(self.ys)
             else:
                 ys = Variable(ys)
@@ -2137,28 +2199,28 @@ class PersonachatSeqseqAgentSplit(Agent):
         # set up the target tensors for validation and test
         zs = None
         eval_labels = None
+
         if any(['eval_labels' in ex for ex in exs]):
-            # randomly select one of the labels to update on, if multiple
-            # append END to each label
-            eval_labels = [random.choice(ex.get('eval_labels', [''])) for ex in exs]
-            parsed = [self.parse(y + ' ' + self.END) for y in eval_labels if y]
-            max_y_len = max(len(y) for y in parsed)
-            if self.truncate > 0 and max_y_len > self.truncate:
-                parsed = [y[:self.truncate] for y in parsed]
-                max_y_len = self.truncate
-            zs = torch.LongTensor(batchsize, max_y_len).fill_(self.NULL_IDX)
-            for i, y in enumerate(parsed):
-                for j, idx in enumerate(y):
-                    zs[i][j] = idx
-            if self.use_cuda:
-                # copy to gpu
-                self.zs.resize_(zs.size())
-                self.zs.copy_(zs, async=True)
-                zs = Variable(self.zs)
-            else:
-                zs = Variable(zs)
-
-
+            if not (len(exs) == 1 and 'eval_labels' in exs[0] and exs[0]['eval_labels']==['']):
+                # randomly select one of the labels to update on, if multiple
+                # append END to each label
+                eval_labels = [random.choice(ex.get('eval_labels', [''])) for ex in exs]
+                parsed = [self.parse(y + ' ' + self.END) for y in eval_labels if y]
+                max_y_len = max(len(y) for y in parsed)
+                if self.truncate > 0 and max_y_len > self.truncate:
+                    parsed = [y[:self.truncate] for y in parsed]
+                    max_y_len = self.truncate
+                zs = torch.LongTensor(batchsize, max_y_len).fill_(self.NULL_IDX)
+                for i, y in enumerate(parsed):
+                    for j, idx in enumerate(y):
+                        zs[i][j] = idx
+                if self.use_cuda:
+                    # copy to gpu
+                    self.zs.resize_(zs.size())
+                    self.zs.copy_(zs, non_blocking=True)
+                    zs = Variable(self.zs)
+                else:
+                    zs = Variable(zs)
 
         # set up candidates
         cands = None
@@ -2188,7 +2250,7 @@ class PersonachatSeqseqAgentSplit(Agent):
                 if self.use_cuda:
                     # copy to gpu
                     self.cands.resize_(cands.size())
-                    self.cands.copy_(cands, async=True)
+                    self.cands.copy_(cands, )
                     cands = Variable(self.cands)
                 else:
                     cands = Variable(cands)
@@ -2218,14 +2280,11 @@ class PersonachatSeqseqAgentSplit(Agent):
             # no valid examples, just return the empty responses we set up
             return batch_reply
 
-        x_lens = [x for x in torch.sum((xs>0).int(), dim=1).data]
-
         # produce predictions either way, but use the targets if available
         predictions, text_cand_inds = self.predict(xs, xs_persona, ys, cands, zs)
 
         if self.opt['datatype'] in ['valid', 'test'] and self.opt['personachat_interact']:
             print('MODEL:' + ' '.join(predictions[0]))
-            symbol_words = ['_s{}_'.format(i) for i in range(20)]
             f1_best = 0
             msg_best = ''
             for msg in self.teacher.data_dialogs['train']['messages']:
@@ -2253,13 +2312,7 @@ class PersonachatSeqseqAgentSplit(Agent):
                 curr = batch_reply[batch_idx]
                 curr['text_candidates'] = [curr_cands[idx] for idx in order
                                            if idx < len(curr_cands)]
-        if eval_labels:
-            for ind in valid_inds:
-                cands_origin = [observations[ind]['text']] + [observations[ind]['eval_labels'][0]] + observations[ind]['persona'].split('.')
-                cands = [[w for w in self.dict.tokenize(s.lower())] for s in cands_origin]
-                pred_origin = batch_reply[ind]['text'].lower()
-                pred = [w for w in self.dict.tokenize(pred_origin)]
-
+                
         return batch_reply
 
     def act(self):
@@ -2307,7 +2360,7 @@ class PersonachatSeqseqAgentSplit(Agent):
     def load(self, path):
         """Return opt and model states."""
         with open(path, 'rb') as read:
-            model = torch.load(read)
+            model = torch.load(read, map_location=lambda cpu, _: cpu)
 
         return model['opt'], model
 
@@ -2338,6 +2391,16 @@ class PersonachatSeqseqAgentSplit(Agent):
             else:
                 self.optims[k].load_state_dict(v)
         self.longest_label = states['longest_label']
+
+    def report(self):
+        m = {}
+        if self.metrics['num_tokens'] > 0:
+            m['loss'] = self.metrics['loss'] / self.metrics['num_tokens']
+            m['ppl'] = math.exp(m['loss'])
+        for k, v in m.items():
+            # clean up: rounds to sigfigs and converts tensors to floats
+            m[k] = round_sigfigs(v, 4)
+        return m
 
     def report_loss(self):
         if hasattr(self, 'loss_guide'):

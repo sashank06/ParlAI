@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 # Download and build the data if it does not exist.
 
 import parlai.core.build_data as build_data
@@ -13,9 +13,8 @@ import os
 import re
 import sys
 import time
+import tqdm
 import xml.etree.ElementTree as ET
-
-from parlai.core.utils import ProgressLogger
 
 NUM_MOVIE_FOLDERS = 140044
 NUM_SUBTITLES_FILES = 446612
@@ -26,7 +25,7 @@ MAX_WORD_LENGTH = 20
 
 # remove brackets
 CLEAN_BRACKETS_REGEX = re.compile(
-    '<!--.*?-->|<[^>]*>|\([^\)]*\)|\[[^\]]*\]|\{[^\}]*\}|##|~'
+    r'<!--.*?-->|<[^>]*>|\([^\)]*\)|\[[^\]]*\]|\{[^\}]*\}|##|~'
 )
 # Usually, unbalanced brackets correspond to very noisy sentences
 # '#' is usually pretty bad and means lyrics of the song
@@ -81,7 +80,7 @@ def get_list_of_files(top_path):
     result = {}
     for path, dirs, files in os.walk(top_path):
         for filename in files:
-            if filename.endswith('.xml.gz'):
+            if filename.endswith('.xml'):
                 full_filename = os.path.realpath(os.path.join(path, filename))
                 assert os.path.isfile(full_filename), 'Bad file ' + full_filename
                 movie_id = get_movie_id(full_filename)
@@ -137,10 +136,10 @@ def clean_text(words):
     words = normalize_whitespaces(sentence).split()
 
     if (
-        len(words) > 0
-        and any(map(lambda k: re.search(r'\w', k) is not None, words))
-        and len(words) >= MIN_WORD_LENGTH
-        and len(words) <= MAX_WORD_LENGTH
+        len(words) > 0 and
+        any(map(lambda k: re.search(r'\w', k) is not None, words)) and
+        len(words) >= MIN_WORD_LENGTH and
+        len(words) <= MAX_WORD_LENGTH
     ):
         return ' '.join(words)
     else:
@@ -149,11 +148,11 @@ def clean_text(words):
 
 def parse_time_str(time_value_str):
     if not(
-        time_value_str is not None
-        and len(time_value_str) == 12
-        and time_value_str[2] == ':'
-        and time_value_str[5] == ':'
-        and time_value_str[8] == ','
+        time_value_str is not None and
+        len(time_value_str) == 12 and
+        time_value_str[2] == ':' and
+        time_value_str[5] == ':' and
+        time_value_str[8] == ','
     ):
         return None
     try:
@@ -162,12 +161,11 @@ def parse_time_str(time_value_str):
             int(time_value_str[3:5]) * 60 +
             int(time_value_str[6:8])
         )
-    except:
+    except ValueError:
         return None
 
 
 def extract_data_from_xml(xml_object):
-    max_time_difference = 1
     previous_end_time = -1000
     conversation = []
     for sentence_node in xml_object.getroot():
@@ -206,10 +204,8 @@ def extract_data_from_xml(xml_object):
         end_time = end_time or previous_end_time
         # add to the conversation
         # flush and start new conversation
-        if (
-            sentence is not None
-            and start_time - previous_end_time <= MAX_TIME_DIFFERENCE_S
-        ):
+        if (sentence is not None and
+                start_time - previous_end_time <= MAX_TIME_DIFFERENCE_S):
             conversation.append(sentence)
         else:
             if len(conversation) > 1:
@@ -258,11 +254,11 @@ class DataProcessor(object):
                         data.add(conversation_to_fb_format(conversation))
                     else:
                         data.add(conversation_to_basic_format(conversation))
-            except ET.ParseError as e:
+            except ET.ParseError:
                 # TODO: We possibly can log these errors,
                 # but I'm not sure how it would intervene with the PrograssLogger
                 pass
-            except:
+            except Exception:
                 print(
                     'Unexpected error for file %s:\n%s' % (filepath, sys.exc_info()[0]),
                     file=sys.stderr,
@@ -297,10 +293,8 @@ def create_fb_format(inpath, outpath, use_history):
 
     processor = DataProcessor(use_history)
 
-    logger = ProgressLogger()
-
     with multiprocessing.Pool(processes=os.cpu_count()) as pool:
-        for i, s in enumerate(pool.imap(processor, movie_dirs.items())):
+        for i, s in enumerate(pool.imap(processor, tqdm.tqdm(movie_dirs.items()))):
             handle = ftrain
             # TODO: Shall we use smaller valid/test sets? Even 10% is A LOT here
             if i % 10 == 0:
@@ -308,7 +302,6 @@ def create_fb_format(inpath, outpath, use_history):
             if i % 10 == 1:
                 handle = fvalid
             handle.write(s)
-            logger.log(i, total_files)
 
     ftrain.close()
     fvalid.close()
@@ -334,13 +327,13 @@ def build(datapath, use_history):
             build_data.remove_dir(dpath)
         build_data.make_dir(dpath)
 
-        untar_path = os.path.join(dpath, 'OpenSubtitles2018', 'xml', 'en')
+        untar_path = os.path.join(dpath, 'OpenSubtitles', 'xml', 'en')
 
-        if len(glob.glob(untar_path + '/*/*/*.xml.gz')) != NUM_SUBTITLES_FILES:
+        if len(glob.glob(untar_path + '/*/*/*.xml')) != NUM_SUBTITLES_FILES:
             # Download the data.
-            url = ('http://opus.lingfil.uu.se/download.php?f=OpenSubtitles2018/en.tar.gz')
-            build_data.download(url, dpath, 'OpenSubtitles2018.tar.gz')
-            build_data.untar(dpath, 'OpenSubtitles2018.tar.gz')
+            url = 'https://object.pouta.csc.fi/OPUS-OpenSubtitles/v2018/xml/en.zip'
+            build_data.download(url, dpath, 'OpenSubtitles2018.zip')
+            build_data.untar(dpath, 'OpenSubtitles2018.zip')
 
         create_fb_format(untar_path, dpath, use_history)
 

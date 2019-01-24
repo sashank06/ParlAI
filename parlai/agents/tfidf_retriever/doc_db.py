@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 """Documents, in a sqlite database.
 
 Adapted from Adam Fisch's work at github.com/facebookresearch/DrQA/
@@ -19,7 +19,7 @@ class DocDB(object):
     """
 
     def __init__(self, db_path=None):
-        self.path = db_path or DEFAULTS['db_path']
+        self.path = db_path
         self.connection = sqlite3.connect(self.path, check_same_thread=False)
 
     def __enter__(self):

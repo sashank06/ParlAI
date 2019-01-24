@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 """Provides an argument parser and a set of default command line options for
 using the ParlAI package.
 """
@@ -10,9 +10,34 @@ using the ParlAI package.
 import argparse
 import importlib
 import os
-import sys
+import pickle
+import json
+import sys as _sys
+import datetime
 from parlai.core.agents import get_agent_module, get_task_module
 from parlai.tasks.tasks import ids_to_tasks
+from parlai.core.build_data import modelzoo_path
+
+
+def get_model_name(opt):
+    model = opt.get('model', None)
+    if model is None:
+        # try to get model name from model opt file
+        model_file = opt.get('model_file', None)
+        if model_file is not None:
+            optfile = model_file + '.opt'
+            if os.path.isfile(optfile):
+                try:
+                    # try json first
+                    with open(optfile, 'r') as handle:
+                        new_opt = json.load(handle)
+                        model = new_opt.get('model', None)
+                except UnicodeDecodeError:
+                    # oops it's pickled
+                    with open(optfile, 'rb') as handle:
+                        new_opt = pickle.load(handle)
+                        model = new_opt.get('model', None)
+    return model
 
 
 def str2bool(value):
@@ -45,6 +70,23 @@ def class2str(value):
     return s
 
 
+def fix_underscores(args):
+    """Converts underscores to hyphens in args.
+
+    For example, converts '--gradient_clip' to '--gradient-clip'.
+
+    :param args: iterable, possibly containing args strings with underscores.
+    """
+    if args:
+        new_args = []
+        for a in args:
+            if type(a) is str and a.startswith('-'):
+                a = a.replace('_', '-')
+            new_args.append(a)
+        args = new_args
+    return args
+
+
 class ParlaiParser(argparse.ArgumentParser):
     """Pseudo-extension of ``argparse`` which sets a number of parameters
     for the ParlAI framework. More options can be added specific to other
@@ -54,17 +96,21 @@ class ParlaiParser(argparse.ArgumentParser):
     For example, see ``parlai.core.dict.DictionaryAgent.add_cmdline_args``.
     """
 
-    def __init__(self, add_parlai_args=True, add_model_args=False,
-                 model_argv=None):
+    def __init__(
+        self,
+        add_parlai_args=True,
+        add_model_args=False,
+        description='ParlAI parser',
+    ):
         """Initializes the ParlAI argparser.
         - add_parlai_args (default True) initializes the default arguments for
         ParlAI package, including the data download paths and task arguments.
         - add_model_args (default False) initializes the default arguments for
         loading models, including initializing arguments from that model.
-        - model_argv (default None uses sys.argv) specifies the list of
-        arguments which includes the model name (e.g. `-m drqa`).
         """
-        super().__init__(description='ParlAI parser.')
+        super().__init__(description=description, allow_abbrev=False,
+                         conflict_handler='resolve',
+                         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         self.register('type', 'bool', str2bool)
         self.register('type', 'class', str2class)
         self.parlai_home = (os.path.dirname(os.path.dirname(os.path.dirname(
@@ -74,13 +120,13 @@ class ParlaiParser(argparse.ArgumentParser):
         self.add_arg = self.add_argument
 
         # remember which args were specified on the command line
-        self.cli_args = sys.argv
+        self.cli_args = _sys.argv[1:]
+        self.overridable = {}
 
         if add_parlai_args:
-            self.add_parlai_args(model_argv)
-            self.add_image_args()
+            self.add_parlai_args()
         if add_model_args:
-            self.add_model_args(model_argv)
+            self.add_model_args()
 
     def add_parlai_data_path(self, argument_group=None):
         if argument_group is None:
@@ -106,6 +152,9 @@ class ParlaiParser(argparse.ArgumentParser):
             '--unique', dest='unique_worker', default=False,
             action='store_true',
             help='enforce that no worker can work on your task twice')
+        mturk.add_argument(
+            '--max-hits-per-worker', dest='max_hits_per_worker', default=0, type=int,
+            help='Max number of hits each worker can perform during current group run')
         mturk.add_argument(
             '--unique-qual-name', dest='unique_qual_name',
             default=None, type=str,
@@ -135,11 +184,19 @@ class ParlaiParser(argparse.ArgumentParser):
             help='importance level for what to put into the logs. the lower '
                  'the level the more that gets logged. values are 0-50')
         mturk.add_argument(
-            '--block-qualification', dest='block_qualification', default='',
-            help='Qualification to use for soft blocking users. By default '
+            '--disconnect-qualification', dest='disconnect_qualification',
+            default=None,
+            help='Qualification to use for soft blocking users for '
+                 'disconnects. By default '
                  'turkers are never blocked, though setting this will allow '
                  'you to filter out turkers that have disconnected too many '
                  'times on previous HITs where this qualification was set.')
+        mturk.add_argument(
+            '--block-qualification', dest='block_qualification', default=None,
+            help='Qualification to use for soft blocking users. This '
+                 'qualification is granted whenever soft_block_worker is '
+                 'called, and can thus be used to filter workers out from a '
+                 'single task or group of tasks by noted performance.')
         mturk.add_argument(
             '--count-complete', dest='count_complete',
             default=False, action='store_true',
@@ -164,6 +221,29 @@ class ParlaiParser(argparse.ArgumentParser):
                  'partner disconnect. I.e. if the number of messages '
                  'exceeds this number, the turker can submit the HIT.'
         )
+        mturk.add_argument(
+            '--local', dest='local', default=False, action='store_true',
+            help='Run the server locally on this server rather than setting up'
+                 ' a heroku server.'
+        )
+        mturk.add_argument(
+            '--hobby', dest='hobby', default=False, action='store_true',
+            help='Run the heroku server on the hobby tier.'
+        )
+        mturk.add_argument(
+            '--max-time', dest='max_time', default=0, type=int,
+            help='Maximum number of seconds per day that a worker is allowed '
+                 'to work on this assignment'
+        )
+        mturk.add_argument(
+            '--max-time-qual', dest='max_time_qual', default=None,
+            help='Qualification to use to share the maximum time requirement '
+                 'with other runs from other machines.'
+        )
+        mturk.add_argument(
+            '--heroku-team', dest='heroku_team', default=None,
+            help='Specify Heroku team name to use for launching Dynos.'
+        )
 
         mturk.set_defaults(is_sandbox=True)
         mturk.set_defaults(is_debug=False)
@@ -187,6 +267,15 @@ class ParlaiParser(argparse.ArgumentParser):
         messenger.add_argument(
             '--password', dest='password', type=str, default=None,
             help='Require a password for entry to the bot')
+        messenger.add_argument(
+            '--bypass-server-setup', dest='bypass_server_setup',
+            action='store_true', default=False,
+            help='should bypass traditional server and socket setup')
+        messenger.add_argument(
+            '--local', dest='local', action='store_true', default=False,
+            help='Run the server locally on this server rather than setting up'
+                 ' a heroku server.'
+        )
 
         messenger.set_defaults(is_debug=False)
         messenger.set_defaults(verbose=False)
@@ -195,17 +284,35 @@ class ParlaiParser(argparse.ArgumentParser):
         default_downloads_path = os.path.join(self.parlai_home, 'downloads')
         parlai = self.add_argument_group('Main ParlAI Arguments')
         parlai.add_argument(
+            '-v', '--show-advanced-args', action='store_true',
+            help='Show hidden command line options (advanced users only)'
+        )
+        parlai.add_argument(
             '-t', '--task',
             help='ParlAI task(s), e.g. "babi:Task1" or "babi,cbt"')
         parlai.add_argument(
             '--download-path', default=default_downloads_path,
+            hidden=True,
             help='path for non-data dependencies to store any needed files.'
                  'defaults to {parlai_dir}/downloads')
         parlai.add_argument(
             '-dt', '--datatype', default='train',
-            choices=['train', 'train:stream', 'train:ordered',
-                     'train:ordered:stream', 'train:stream:ordered',
-                     'valid', 'valid:stream', 'test', 'test:stream'],
+            choices=[
+                'train',
+                'train:stream',
+                'train:ordered',
+                'train:ordered:stream',
+                'train:stream:ordered',
+                'train:evalmode',
+                'train:evalmode:stream',
+                'train:evalmode:ordered',
+                'train:evalmode:ordered:stream',
+                'train:evalmode:stream:ordered',
+                'valid',
+                'valid:stream',
+                'test',
+                'test:stream'
+            ],
             help='choose from: train, train:ordered, valid, test. to stream '
                  'data add ":stream" to any option (e.g., train:stream). '
                  'by default: train is random with replacement, '
@@ -219,12 +326,20 @@ class ParlaiParser(argparse.ArgumentParser):
             help='number of threads. If batchsize set to 1, used for hogwild; '
                  'otherwise, used for number of threads in threadpool loading,'
                  ' e.g. in vqa')
+        parlai.add_argument(
+            '--hide-labels', default=False, type='bool',
+            hidden=True,
+            help='default (False) moves labels in valid and test sets to the '
+                 'eval_labels field. If True, they are hidden completely.')
         batch = self.add_argument_group('Batching Arguments')
         batch.add_argument(
             '-bs', '--batchsize', default=1, type=int,
             help='batch size for minibatch training schemes')
-        batch.add_argument('-bsrt', '--batch-sort', default=True, type='bool',
-                           help='If enabled (default True), create batches by '
+        batch.add_argument('-bsrt', '--batch-sort', default=False, type='bool',
+                           help='**NOTE: This is deprecated, if you would like '
+                                'to make use of batch sort functionality, please'
+                                'use -pybsrt with the PytorchDataTeacher**.'
+                                'If enabled (default %(default)s), create batches by '
                                 'flattening all episodes to have exactly one '
                                 'utterance exchange and then sorting all the '
                                 'examples according to their length. This '
@@ -232,70 +347,210 @@ class ParlaiParser(argparse.ArgumentParser):
                                 'present after examples have been parsed, '
                                 'speeding up training.')
         batch.add_argument('-clen', '--context-length', default=-1, type=int,
-                           help='Number of past utterances to remember when '
+                           help='**NOTE: This is deprecated, if you would like '
+                                'to make use of batch sort functionality, please'
+                                'use -pybsrt with the PytorchDataTeacher**.'
+                                'Number of past utterances to remember when '
                                 'building flattened batches of data in multi-'
                                 'example episodes.')
         batch.add_argument('-incl', '--include-labels',
                            default=True, type='bool',
-                           help='Specifies whether or not to include labels '
+                           help='**NOTE: This is deprecated, if you would like '
+                                'to make use of batch sort functionality, please'
+                                'use -pybsrt with the PytorchDataTeacher**.'
+                                'Specifies whether or not to include labels '
                                 'as past utterances when building flattened '
                                 'batches of data in multi-example episodes.')
+
         self.add_parlai_data_path(parlai)
-        self.add_task_args(args)
 
-    def add_task_args(self, args):
-        # Find which task specified, and add its specific arguments.
-        args = sys.argv if args is None else args
-        task = None
-        for index, item in enumerate(args):
-            if item == '-t' or item == '--task':
-                task = args[index + 1]
-        if task:
-            for t in ids_to_tasks(task).split(','):
-                agent = get_task_module(t)
-                if hasattr(agent, 'add_cmdline_args'):
-                    agent.add_cmdline_args(self)
+        self.add_pytorch_datateacher_args()
 
-    def add_model_args(self, args=None):
+    def add_distributed_training_args(self):
+        grp = self.add_argument_group('Distributed Training')
+        grp.add_argument(
+            '--distributed-world-size', type=int,
+            help='Number of workers.'
+        )
+        grp.add_argument(
+            '--verbose', type='bool', default=False,
+            help='All workers print output.',
+            hidden=True,
+        )
+        return grp
+
+    def add_pytorch_datateacher_args(self):
+        pytorch = self.add_argument_group('PytorchData Arguments')
+        pytorch.add_argument(
+            '-pyt', '--pytorch-teacher-task',
+            help='Specify to use the PytorchDataTeacher for multiprocessed '
+                 'data loading with a standard ParlAI task, e.g. "babi:Task1k"')
+        pytorch.add_argument(
+            '-pytd', '--pytorch-teacher-dataset',
+            help='Specify to use the PytorchDataTeacher for multiprocessed '
+                 'data loading with a pytorch Dataset, e.g. "vqa_1" or "flickr30k"')
+        pytorch.add_argument(
+            '--pytorch-datapath', type=str, default=None,
+            help='datapath for pytorch data loader (note: only specify if '
+                 'the data does not reside in the normal ParlAI datapath)')
+        pytorch.add_argument(
+            '-nw', '--numworkers', type=int, default=4,
+            help='how many workers the Pytorch dataloader should use')
+        pytorch.add_argument(
+            '--pytorch-preprocess', type='bool', default=False,
+            help='Whether the agent should preprocess the data while building'
+                 'the pytorch data')
+        pytorch.add_argument(
+            '-pybsrt', '--pytorch-teacher-batch-sort',
+            type='bool', default=False,
+            help='Whether to construct batches of similarly sized episodes'
+            'when using the PytorchDataTeacher (either via specifying `-pyt`'
+            'or `-pytd`')
+        pytorch.add_argument(
+            '--batch-sort-cache-type', type=str,
+            choices=['pop', 'index', 'none'], default='pop',
+            help='how to build up the batch cache')
+        pytorch.add_argument(
+            '--batch-length-range', type=int, default=5,
+            help='degree of variation of size allowed in batch')
+        pytorch.add_argument(
+            '--shuffle', type='bool', default=False,
+            help='Whether to shuffle the data')
+        pytorch.add_argument(
+            '--batch-sort-field', type=str, default='text',
+            help='What field to use when determining the length of an episode')
+        pytorch.add_argument('-pyclen', '--pytorch-context-length', default=-1,
+                             type=int,
+                             help='Number of past utterances to remember when '
+                                  'building flattened batches of data in multi-'
+                                  'example episodes.'
+                                  '(For use with PytorchDataTeacher)')
+        pytorch.add_argument('-pyincl', '--pytorch-include-labels',
+                             default=True, type='bool',
+                             help='Specifies whether or not to include labels '
+                                  'as past utterances when building flattened '
+                                  'batches of data in multi-example episodes.'
+                                  '(For use with PytorchDataTeacher)')
+
+    def add_model_args(self):
+        """Add arguments related to models such as model files."""
         model_args = self.add_argument_group('ParlAI Model Arguments')
         model_args.add_argument(
             '-m', '--model', default=None,
-            help='the model class name, should match parlai/agents/<model>')
+            help='the model class name. can match parlai/agents/<model> for '
+                 'agents in that directory, or can provide a fully specified '
+                 'module for `from X import Y` via `-m X:Y` '
+                 '(e.g. `-m parlai.agents.seq2seq.seq2seq:Seq2SeqAgent`)')
         model_args.add_argument(
             '-mf', '--model-file', default=None,
             help='model file name for loading and saving models')
         model_args.add_argument(
             '--dict-class',
+            hidden=True,
             help='the class of the dictionary agent uses')
-        # Find which model specified, and add its specific arguments.
-        if args is None:
-            args = sys.argv
-        model = None
-        for index, item in enumerate(args):
-            if item == '-m' or item == '--model':
-                model = args[index + 1]
-        if model:
-            agent = get_agent_module(model)
+
+    def add_model_subargs(self, model):
+        """Add arguments specific to a particular model."""
+        agent = get_agent_module(model)
+        try:
             if hasattr(agent, 'add_cmdline_args'):
                 agent.add_cmdline_args(self)
+        except argparse.ArgumentError:
+            # already added
+            pass
+        try:
             if hasattr(agent, 'dictionary_class'):
                 s = class2str(agent.dictionary_class())
-                model_args.set_defaults(dict_class=s)
+                self.set_defaults(dict_class=s)
+        except argparse.ArgumentError:
+            # already added
+            pass
 
-    def add_image_args(self, args=None):
-        # Find which image mode specified, add its specific arguments if needed.
-        args = sys.argv if args is None else args
-        image_mode = None
-        for index, item in enumerate(args):
-            if item == '-im' or item == '--image-mode':
-                image_mode = args[index + 1]
-        if image_mode and image_mode != 'none':
-            parlai = \
-                self.add_argument_group('ParlAI Image Preprocessing Arguments')
+    def add_task_args(self, task):
+        """Add arguments specific to the specified task."""
+        for t in ids_to_tasks(task).split(','):
+            agent = get_task_module(t)
+            try:
+                if hasattr(agent, 'add_cmdline_args'):
+                    agent.add_cmdline_args(self)
+            except argparse.ArgumentError:
+                # already added
+                pass
+
+    def add_pyt_dataset_args(self, opt):
+        """Add arguments specific to specified pytorch dataset"""
+        from parlai.core.pytorch_data_teacher import get_dataset_classes
+        dataset_classes = get_dataset_classes(opt)
+        for dataset, _, _ in dataset_classes:
+            try:
+                if hasattr(dataset, 'add_cmdline_args'):
+                    dataset.add_cmdline_args(self)
+            except argparse.ArgumentError:
+                # already added
+                pass
+
+    def add_image_args(self, image_mode):
+        """Add additional arguments for handling images."""
+        try:
+            parlai = self.add_argument_group('ParlAI Image Preprocessing Arguments')
             parlai.add_argument('--image-size', type=int, default=256,
                                 help='resizing dimension for images')
             parlai.add_argument('--image-cropsize', type=int, default=224,
                                 help='crop dimension for images')
+        except argparse.ArgumentError:
+            # already added
+            pass
+
+    def add_extra_args(self, args=None):
+        """Add more args depending on how known args are set."""
+        parsed = vars(self.parse_known_args(args, nohelp=True)[0])
+
+        # find which image mode specified if any, and add additional arguments
+        image_mode = parsed.get('image_mode', None)
+        if image_mode is not None and image_mode != 'none':
+            self.add_image_args(image_mode)
+
+        # find which task specified if any, and add its specific arguments
+        task = parsed.get('task', None)
+        if task is not None:
+            self.add_task_args(task)
+        evaltask = parsed.get('evaltask', None)
+        if evaltask is not None:
+            self.add_task_args(evaltask)
+
+        # find pytorch teacher task if specified, add its specific arguments
+        pytorch_teacher_task = parsed.get('pytorch_teacher_task', None)
+        if pytorch_teacher_task is not None:
+            self.add_task_args(pytorch_teacher_task)
+
+        # find pytorch dataset if specified, add its specific arguments
+        pytorch_teacher_dataset = parsed.get('pytorch_teacher_dataset', None)
+        if pytorch_teacher_dataset is not None:
+            self.add_pyt_dataset_args(parsed)
+
+        # find which model specified if any, and add its specific arguments
+        model = get_model_name(parsed)
+        if model is not None:
+            self.add_model_subargs(model)
+
+        # reset parser-level defaults over any model-level defaults
+        try:
+            self.set_defaults(**self._defaults)
+        except AttributeError:
+            raise RuntimeError('Please file an issue on github that argparse '
+                               'got an attribute error when parsing.')
+
+    def parse_known_args(self, args=None, namespace=None, nohelp=False):
+        """Custom parse known args to ignore help flag."""
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        args = fix_underscores(args)
+
+        if nohelp:
+            # ignore help
+            args = [a for a in args if a != '-h' and a != '--help']
+        return super().parse_known_args(args, namespace)
 
     def parse_args(self, args=None, namespace=None, print_args=True):
         """Parses the provided arguments and returns a dictionary of the
@@ -303,6 +558,7 @@ class ParlaiParser(argparse.ArgumentParser):
         to support the style ``opt.get(key, default)``, which would otherwise
         return ``None``.
         """
+        self.add_extra_args(args)
         self.args = super().parse_args(args=args)
         self.opt = vars(self.args)
 
@@ -320,11 +576,50 @@ class ParlaiParser(argparse.ArgumentParser):
             os.environ['PARLAI_DATAPATH'] = self.opt['datapath']
 
         # set all arguments specified in commandline as overridable
-        override = {}
-        for k, v in self.opt.items():
-            if v in self.cli_args:
-                override[k] = v
-        self.opt['override'] = override
+        option_strings_dict = {}
+        store_true = []
+        store_false = []
+        for group in self._action_groups:
+            for a in group._group_actions:
+                if hasattr(a, 'option_strings'):
+                    for option in a.option_strings:
+                        option_strings_dict[option] = a.dest
+                        if '_StoreTrueAction' in str(type(a)):
+                            store_true.append(option)
+                        elif '_StoreFalseAction' in str(type(a)):
+                            store_false.append(option)
+
+        for i in range(len(self.cli_args)):
+            if self.cli_args[i] in option_strings_dict:
+                if self.cli_args[i] in store_true:
+                    self.overridable[option_strings_dict[self.cli_args[i]]] = \
+                        True
+                elif self.cli_args[i] in store_false:
+                    self.overridable[option_strings_dict[self.cli_args[i]]] = \
+                        False
+                elif i < len(self.cli_args) - 1 and self.cli_args[i + 1][:1] != '-':
+                    key = option_strings_dict[self.cli_args[i]]
+                    self.overridable[key] = self.opt[key]
+        self.opt['override'] = self.overridable
+
+        # map filenames that start with 'models:' to point to the model zoo dir
+        if self.opt.get('model_file') is not None:
+            self.opt['model_file'] = modelzoo_path(self.opt.get('datapath'),
+                                                   self.opt['model_file'])
+        if self.opt['override'].get('model_file') is not None:
+            # also check override
+            self.opt['override']['model_file'] = modelzoo_path(
+                self.opt.get('datapath'), self.opt['override']['model_file'])
+        if self.opt.get('dict_file') is not None:
+            self.opt['dict_file'] = modelzoo_path(self.opt.get('datapath'),
+                                                  self.opt['dict_file'])
+        if self.opt['override'].get('dict_file') is not None:
+            # also check override
+            self.opt['override']['dict_file'] = modelzoo_path(
+                self.opt.get('datapath'), self.opt['override']['dict_file'])
+
+        # add start time of an experiment
+        self.opt['starttime'] = datetime.datetime.today().strftime('%b%d_%H-%M')
 
         if print_args:
             self.print_args()
@@ -345,9 +640,55 @@ class ParlaiParser(argparse.ArgumentParser):
             }
             namespace = argparse.Namespace(**group_dict)
             count = 0
-            for key in namespace.__dict__:
+            for key in sorted(namespace.__dict__):
                 if key in values:
                     if count == 0:
                         print('[ ' + group.title + ': ] ')
                     count += 1
                     print('[  ' + key + ': ' + values[key] + ' ]')
+
+    def set_params(self, **kwargs):
+        """Set overridable kwargs."""
+        self.set_defaults(**kwargs)
+        for k, v in kwargs.items():
+            self.overridable[k] = v
+
+    @property
+    def show_advanced_args(self):
+        if hasattr(self, '_show_advanced_args'):
+            return self._show_advanced_args
+        known_args, _ = self.parse_known_args(nohelp=True)
+        if hasattr(known_args, 'show_advanced_args'):
+            self._show_advanced_args = known_args.show_advanced_args
+        else:
+            self._show_advanced_args = True
+        return self._show_advanced_args
+
+    def _handle_hidden_args(self, kwargs):
+        if 'hidden' in kwargs:
+            flag = kwargs['hidden']
+            del kwargs['hidden']
+            if flag and not self.show_advanced_args:
+                kwargs['help'] = argparse.SUPPRESS
+        return kwargs
+
+    def add_argument(self, *args, **kwargs):
+        """Override to convert underscores to hyphens for consistency."""
+        return super().add_argument(
+            *fix_underscores(args),
+            **self._handle_hidden_args(kwargs)
+        )
+
+    def add_argument_group(self, *args, **kwargs):
+        """Override to make arg groups also convert underscores to hyphens."""
+        arg_group = super().add_argument_group(*args, **kwargs)
+        original_add_arg = arg_group.add_argument
+
+        def ag_add_argument(*args, **kwargs):
+            return original_add_arg(
+                *fix_underscores(args),
+                **self._handle_hidden_args(kwargs)
+            )
+
+        arg_group.add_argument = ag_add_argument  # override _ => -
+        return arg_group

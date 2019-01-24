@@ -1,8 +1,8 @@
+#!/usr/bin/env python3
+
 # Copyright (c) 2017-present, Moscow Institute of Physics and Technology.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 from parlai.core.teachers import DialogTeacher
 
@@ -57,11 +57,20 @@ class DefaultTeacher(DialogTeacher):
             if len(dialog['thread']) == 0:
                 continue
             user_types = dict(map(lambda u: (u['id'], u['userType']), dialog['users']))
-            str_threads = [i for i in map(lambda u: DefaultTeacher._transform_utterance(u, user_types),
-                                          dialog["thread"])]
-            dialog_txt = reduce(lambda u1, u2: u1 + '\n' + u2, str_threads, str_threads.pop(0))
+            str_threads = [
+                i for i in map(
+                    lambda u: DefaultTeacher._transform_utterance(u, user_types),
+                    dialog["thread"])
+            ]
+            dialog_txt = reduce(
+                lambda u1, u2: u1 + '\n' + u2,
+                str_threads,
+                str_threads.pop(0)
+            )
             e1 = dialog['evaluation'][0]
             e2 = dialog['evaluation'][1]
-            label = '{0}:{1};{2}:{3}'.format(e1['userId'], e1['quality'], e2['userId'], e2['quality'])
+            label = '{0}:{1};{2}:{3}'.format(
+                e1['userId'], e1['quality'], e2['userId'], e2['quality']
+            )
 
             yield (dialog_txt, [label]), True

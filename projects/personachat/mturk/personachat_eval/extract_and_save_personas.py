@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 import pickle
 import os
 from parlai.core.params import ParlaiParser
@@ -51,7 +51,6 @@ def main(opt):
     teacher_name = 'personachat:{}'.format(opt.get('persona_type'))
     teacher_name += 'Revised' if opt.get('revised') else 'Original'
     opt['task'] = teacher_name
-    opt['personas_path'] = personas_path
     opt['datatype'] = 'train:ordered:stream'
     opt['numthreads'] = 1
     opt['batchsize'] = 1

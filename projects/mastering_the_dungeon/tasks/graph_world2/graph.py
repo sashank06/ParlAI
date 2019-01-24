@@ -1,15 +1,14 @@
+#!/usr/bin/env python3
+
 ##
-## Copyright (c) 2017-present, Facebook, Inc.
-## All rights reserved.
-## This source code is licensed under the BSD-style license found in the
-## LICENSE file in the root directory of this source tree. An additional grant
-## of patent rights can be found in the PATENTS file in the same directory.
+## Copyright (c) Facebook, Inc. and its affiliates.
+## This source code is licensed under the MIT license found in the
+## LICENSE file in the root directory of this source tree.
 ##
 
 import random
 import numpy as np
 from copy import deepcopy
-from collections import defaultdict as dd
 from collections import Counter
 import parlai.core.build_data as build_data
 import torch
@@ -474,7 +473,6 @@ class Graph(object):
             self.send_msg(agent_id, 'It is not a container.\n')
             return False
         self.add_contained_in(obj_id, receiver_id)
-        agent_desc = self.node_to_desc(agent_id, use_the=True).capitalize()
         receiver_desc = self.node_to_desc(receiver_id, use_the=True)
         self.send_msg(agent_id, "You put " + self.display_node_list([obj_id])
                       + " in " + receiver_desc + '.\n')

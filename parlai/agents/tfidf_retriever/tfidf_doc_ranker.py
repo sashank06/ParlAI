@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 """Rank documents with TF-IDF scores.
 
 Adapted from Adam Fisch's work at github.com/facebookresearch/DrQA/
@@ -40,8 +40,17 @@ class TfidfDocRanker(object):
         self.hash_size = metadata['hash_size']
         self.tokenizer = tokenizers.get_class(metadata['tokenizer'])()
         self.doc_freqs = metadata['doc_freqs'].squeeze()
+        self.doc_dict = metadata.get('doc_dict', None)
         self.num_docs = self.doc_mat.shape[1] - 1
         self.strict = strict
+
+    def get_doc_index(self, doc_id):
+        """Convert doc_id --> doc_index"""
+        return self.doc_dict[0][doc_id] if self.doc_dict else doc_id
+
+    def get_doc_id(self, doc_index):
+        """Convert doc_index --> doc_id"""
+        return self.doc_dict[1][doc_index] if self.doc_dict else doc_index
 
     def closest_docs(self, query, k=1, matrix=None):
         """Closest docs by dot product between query and documents

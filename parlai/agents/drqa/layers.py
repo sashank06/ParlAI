@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -204,12 +204,17 @@ class BilinearSeqAttn(nn.Module):
         Wy = self.linear(y) if self.linear is not None else y
         xWy = x.bmm(Wy.unsqueeze(2)).squeeze(2)
         xWy.data.masked_fill_(x_mask.data, -float('inf'))
+        self.xWy = xWy
         if self.training:
             # In training we output log-softmax for NLL
             alpha = F.log_softmax(xWy)
         else:
             # ...Otherwise 0-1 probabilities
-            alpha = F.softmax(xWy)
+            # alpha = F.softmax(xWy)
+
+            # Note: We found better eval performance with unnormalized weights
+            #       here
+            alpha = xWy.exp()
         return alpha
 
 

@@ -1,10 +1,9 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
-from examples.eval_model import eval_model
-from parlai.core.params import ParlaiParser
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+from examples.eval_model import eval_model, setup_args
 
 import ast
 import unittest
@@ -13,17 +12,6 @@ import sys
 
 class TestEvalModel(unittest.TestCase):
     """Basic tests on the eval_model.py example."""
-
-    args = [
-        '--task', 'tasks.repeat:RepeatTeacher:10',
-    ]
-
-    parser = ParlaiParser()
-    parser.set_defaults(datatype='valid')
-    opt = parser.parse_args(args, print_args=False)
-    opt['model'] = 'repeat_label'
-    opt['num_examples'] = 5
-    opt['display_examples'] = False
 
     def test_output(self):
         """Test output of running eval_model"""
@@ -37,11 +25,21 @@ class TestEvalModel(unittest.TestCase):
             def __str__(self):
                 return "".join(self.data)
 
+        parser = setup_args()
+        parser.set_defaults(
+            task='tasks.repeat:RepeatTeacher:10',
+            model='repeat_label',
+            datatype='valid',
+            num_examples=5,
+            display_examples=False,
+        )
+
         old_out = sys.stdout
         output = display_output()
         try:
             sys.stdout = output
-            eval_model(self.opt, self.parser, printargs=False)
+            opt = parser.parse_args(print_args=False)
+            eval_model(opt, print_parser=parser)
         finally:
             # restore sys.stdout
             sys.stdout = old_out
@@ -54,11 +52,12 @@ class TestEvalModel(unittest.TestCase):
         for i in range(1, len(scores)):
             score = ast.literal_eval(scores[i])
             # check totals
-            self.assertTrue(score['total'] == i,
+            self.assertTrue(score['exs'] == i,
                             "Total is incorrect")
             # accuracy should be one
             self.assertTrue(score['accuracy'] == 1,
                             "accuracy != 1")
+
 
 if __name__ == '__main__':
     unittest.main()

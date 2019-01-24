@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 from parlai.core.worlds import World
 from parlai.messenger.core.worlds import OnboardWorld
@@ -223,13 +223,13 @@ class MessengerChatTaskWorld(World):
             a = self.agents[x].act()
             if a is not None:
                 if '[DONE]' in a['text']:
-                    self.agents[x-1].observe({
+                    self.agents[x - 1].observe({
                         'id': 'World',
                         'text': 'The other agent has ended the chat.'
                     })
                     self.episodeDone = True
                 else:
-                    self.agents[x-1].observe(a)
+                    self.agents[x - 1].observe(a)
 
     def episode_done(self):
         return self.episodeDone

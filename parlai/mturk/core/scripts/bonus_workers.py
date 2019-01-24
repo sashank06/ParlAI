@@ -1,11 +1,12 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import argparse
 import parlai.mturk.core.mturk_utils as mturk_utils
+
 
 def main():
     """This script should be used to compensate workers that have not recieved
@@ -59,6 +60,7 @@ def main():
             Reason=reason
         )
         print(resp)
+
 
 if __name__ == '__main__':
     main()

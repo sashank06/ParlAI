@@ -1,12 +1,13 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 # Download and build the data if it does not exist.
 
 import parlai.core.build_data as build_data
 import os
+
 
 def create_fb_format(outpath, dtype, inpath, inpath2):
     print('building fbformat:' + dtype)
@@ -40,6 +41,7 @@ def create_fb_format(outpath, dtype, inpath, inpath2):
             fout.write(s + '\n')
     fout.close()
 
+
 def build(opt):
     dpath = os.path.join(opt['datapath'], 'MCTest')
     version = None
@@ -53,7 +55,7 @@ def build(opt):
 
         # Download the data.
         fname = 'mctest.tar.gz'
-        url = 'https://s3.amazonaws.com/fair-data/parlai/mctest/' + fname
+        url = 'http://parl.ai/downloads/mctest/' + fname
         build_data.download(url, dpath, fname)
         build_data.untar(dpath, fname)
 

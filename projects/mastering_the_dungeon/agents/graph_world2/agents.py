@@ -1,9 +1,9 @@
+#!/usr/bin/env python3
+
 ##
-## Copyright (c) 2017-present, Facebook, Inc.
-## All rights reserved.
-## This source code is licensed under the BSD-style license found in the
-## LICENSE file in the root directory of this source tree. An additional grant
-## of patent rights can be found in the PATENTS file in the same directory.
+## Copyright (c) Facebook, Inc. and its affiliates.
+## This source code is licensed under the MIT license found in the
+## LICENSE file in the root directory of this source tree.
 ##
 
 from parlai.core.agents import Agent
@@ -13,9 +13,8 @@ from .models import ObjectChecklistModel, Seq2SeqModel
 import numpy as np
 from torch.autograd import Variable
 import torch
-import random
 from copy import deepcopy
-from projects.mastering_the_dungeon.tasks.graph_world2.graph import DEFAULT_ROOMS, DEFAULT_OBJECTS, DEFAULT_CONTAINERS, DEFAULT_AGENTS, DEDUP_OBJECTS, DEDUP_PROPS
+from projects.mastering_the_dungeon.tasks.graph_world2.graph import DEFAULT_ROOMS, DEFAULT_CONTAINERS, DEFAULT_AGENTS, DEDUP_OBJECTS, DEDUP_PROPS
 
 nlp = spacy.load('en')
 

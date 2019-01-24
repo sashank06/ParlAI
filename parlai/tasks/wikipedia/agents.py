@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 '''
     Provides a dump of Wikipedia articles from 2/3/18.
 
@@ -51,21 +51,24 @@ class FullTeacher(DialogTeacher):
                         if self.key_value:
                             yield (title, [text]), True
                         else:
-                            yield (title + '\n' + text, None), True
+                            yield (text, ['']), True
 
     def get_extraction_instructions(self):
         '''If one wants to run extraction themselves on a raw wikipedia dump'''
         dpath = os.path.join(self.opt['datapath'], 'wikipedia', 'full')
         fname = 'enwiki-latest-pages-articles.xml.bz2'
-        instructions = """
-        To complete the data extraction, please run the following:
-        \n
-        mkdir -p {download}  && git clone https://github.com/attardi/wikiextractor  {download}/wikiextract && cd {download}/wikiextract && python WikiExtractor.py {wikifile} --filter_disambig_pages -o {output} --json
-        """.format(
+        instructions = (
+            "To complete the data extraction, please run the following:\n"
+            "mkdir -p {download} && "
+            "git clone https://github.com/attardi/wikiextractor "
+            "{download}/wikiextract && cd {download}/wikiextract && "
+            "python WikiExtractor.py {wikifile} --filter_disambig_pages "
+            "-o {output} --json"
+        ).format(
             download=self.opt['download_path'],
             wikifile=dpath + '/' + fname,
             output=dpath + '/' + 'wiki_extracted'
-            )
+        )
 
         return instructions
 
@@ -93,7 +96,7 @@ class SummaryTeacher(DialogTeacher):
                 if self.key_value:
                     yield (title, [text]), True
                 else:
-                    yield (title + '\n' + text, None), True
+                    yield (title + '\n' + text, ['']), True
 
 
 class DefaultTeacher(SummaryTeacher):

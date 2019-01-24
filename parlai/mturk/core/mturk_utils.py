@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
 import boto3
 import os
@@ -17,7 +17,6 @@ aws_profile_name = 'parlai_mturk'
 client = None
 
 parent_dir = os.path.dirname(os.path.abspath(__file__))
-mturk_hit_frame_height = 650
 
 
 def setup_aws_credentials():
@@ -132,7 +131,7 @@ def check_mturk_balance(balance_needed, is_sandbox):
         return True
 
 
-def create_hit_config(task_description, unique_worker, is_sandbox):
+def create_hit_config(opt, task_description, unique_worker, is_sandbox):
     """Writes a HIT config to file"""
     mturk_submit_url = 'https://workersandbox.mturk.com/mturk/externalSubmit'
     if not is_sandbox:
@@ -142,7 +141,9 @@ def create_hit_config(task_description, unique_worker, is_sandbox):
         'is_sandbox': is_sandbox,
         'mturk_submit_url': mturk_submit_url,
         'unique_worker': unique_worker,
-        'frame_height': mturk_hit_frame_height
+        'frame_height': opt.get('frame_height', 650),
+        'allow_reviews': opt.get('allow_reviews', False),
+        'block_mobile': opt.get('block_mobile', True),
     }
     hit_config_file_path = os.path.join(parent_dir, 'hit_config.json')
     if os.path.exists(hit_config_file_path):
@@ -262,43 +263,64 @@ def give_worker_qualification(worker_id, qualification_id, value=None,
         )
 
 
+def remove_worker_qualification(worker_id, qualification_id,
+                                is_sandbox=True, reason=''):
+    """Give a qualification to the given worker"""
+    client = get_mturk_client(is_sandbox)
+    client.disassociate_qualification_from_worker(
+        QualificationTypeId=qualification_id,
+        WorkerId=worker_id,
+        Reason=reason
+    )
+
+
 def create_hit_type(hit_title, hit_description, hit_keywords, hit_reward,
                     assignment_duration_in_seconds, is_sandbox,
-                    qualifications=None):
+                    qualifications=None,
+                    auto_approve_delay=7 * 24 * 3600,  # default 1 week
+                    ):
     """Create a HIT type to be used to generate HITs of the requested params"""
     client = get_mturk_client(is_sandbox)
 
-    # Create a qualification with Locale In('US', 'CA') requirement attached
-    localRequirements = [{
-        'QualificationTypeId': '00000000000000000071',
-        'Comparator': 'In',
-        'LocaleValues': [
-            {'Country': 'US'},
-            {'Country': 'CA'},
-            {'Country': 'GB'},
-            {'Country': 'AU'},
-            {'Country': 'NZ'}
-        ],
-        'RequiredToPreview': True
-    }]
+    # If the user hasn't specified a location qualification, we assume to
+    # restrict the HIT to some english-speaking countries.
+    locale_requirements = []
+    has_locale_qual = False
     if qualifications is not None:
-        localRequirements += qualifications
+        for q in qualifications:
+            if q['QualificationTypeId'] == '00000000000000000071':
+                has_locale_qual = True
+        locale_requirements += qualifications
+
+    if not has_locale_qual:
+        locale_requirements.append({
+            'QualificationTypeId': '00000000000000000071',
+            'Comparator': 'In',
+            'LocaleValues': [
+                {'Country': 'US'},
+                {'Country': 'CA'},
+                {'Country': 'GB'},
+                {'Country': 'AU'},
+                {'Country': 'NZ'}
+            ],
+            'RequiredToPreview': True
+        })
 
     # Create the HIT type
     response = client.create_hit_type(
-        AutoApprovalDelayInSeconds=4*7*24*3600,  # auto-approve after 4 weeks
+        AutoApprovalDelayInSeconds=auto_approve_delay,
         AssignmentDurationInSeconds=assignment_duration_in_seconds,
         Reward=str(hit_reward),
         Title=hit_title,
         Keywords=hit_keywords,
         Description=hit_description,
-        QualificationRequirements=localRequirements
+        QualificationRequirements=locale_requirements,
     )
     hit_type_id = response['HITTypeId']
     return hit_type_id
 
 
-def create_hit_with_hit_type(page_url, hit_type_id, num_assignments,
+def create_hit_with_hit_type(opt, page_url, hit_type_id, num_assignments,
                              is_sandbox):
     """Creates the actual HIT given the type and page to direct clients to"""
     page_url = page_url.replace('&', '&amp;')
@@ -311,7 +333,7 @@ def create_hit_with_hit_type(page_url, hit_type_id, num_assignments,
             '<ExternalURL>{}</ExternalURL>'  # noqa: E131
             '<FrameHeight>{}</FrameHeight>'
         '</ExternalQuestion>'
-        ''.format(amazon_ext_url, page_url, mturk_hit_frame_height)
+        ''.format(amazon_ext_url, page_url, opt.get('frame_height', 650))
     )
 
     client = get_mturk_client(is_sandbox)
@@ -336,7 +358,7 @@ def create_hit_with_hit_type(page_url, hit_type_id, num_assignments,
         url_target,
         hit_type_id
     )
-    return hit_link, hit_id
+    return hit_link, hit_id, response
 
 
 def expire_hit(is_sandbox, hit_id):

@@ -1,8 +1,8 @@
-# Copyright (c) 2017-present, Facebook, Inc.
-# All rights reserved.
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree. An additional grant
-# of patent rights can be found in the PATENTS file in the same directory.
+#!/usr/bin/env python3
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 from parlai.core.params import ParlaiParser
 from parlai.mturk.core.mturk_manager import MTurkManager
 from worlds import \
@@ -10,6 +10,7 @@ from worlds import \
 from task_config import task_config
 
 import os
+
 
 def main():
     """This task consists of one agent, model or MTurk worker, talking to an
@@ -87,7 +88,6 @@ def main():
             world = PersonaChatEvalWorld(
                 opt=opt,
                 agents=[agents],
-                corpus=corpus,
                 range_turn=[int(s) for s in opt['range_turn'].split(',')],
                 max_turn=opt['max_turns'],
                 max_resp_time=opt['max_resp_time'],
