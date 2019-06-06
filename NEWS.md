@@ -1,10 +1,20 @@
-<h2>News</h2>
-2019-01-16: ParlAI has been relicensed under the MIT open source license.
+## News
 
+2019-15-05: Added [QuAC](https://github.com/facebookresearch/ParlAI/tree/master/parlai/tasks/quac), Question Answering in Context dataset, and [COQA](https://github.com/facebookresearch/ParlAI/tree/master/parlai/tasks/coqa), Conversational Question Answering Challenge datasets.
+
+2019-05-03: The [What makes a good Conversation project page](https://parl.ai/projects/controllable_dialogue/) is now available with pretrained models.
+
+2019-03-15: The [Wizard of Wikipedia project page](http://parl.ai/projects/wizard_of_wikipedia/) is updated with pretrained models and specialized model code.
+
+2019-03-09: Added [LIGHT](http://parl.ai/projects/light) text adventure game research platform for learning to speak and act. [[press]](https://venturebeat.com/2019/03/08/facebook-ai-researchers-create-a-text-based-adventure-to-study-how-ai-speak-and-act/)
+
+2019-02-07: Added [BERT Ranker agents](https://github.com/facebookresearch/ParlAI/tree/master/parlai/agents/bert_ranker), several variations of a ranking model based on the pretrained language model BERT.
+
+2019-01-16: ParlAI has been relicensed under the MIT open source license.
 
 2018-12-13: Added [Daily Dialog](https://github.com/facebookresearch/ParlAI/blob/master/parlai/tasks/dailydialog/agents.py), an open-domain daily dialogue dataset.
 
-2018-11-05: Added [Wizard of Wikipedia](https://arxiv.org/abs/1811.01241), a dataset for knowledge-powered conversation.
+2018-11-05: Added [Wizard of Wikipedia](http://parl.ai/projects/wizard_of_wikipedia/), a dataset for knowledge-powered conversation.
 
 2018-11-02: Added [Image-Chat](https://klshuster.github.io/image_chat/), a dataset for engaging personality-conditioned dialogue grounded in images.
 
@@ -17,7 +27,6 @@
 2018-05-22: Two new tasks added: [COCO Image Captioning](http://cocodataset.org/#captions-2015) and [Flickr30k Entities](http://web.engr.illinois.edu/~bplumme2/Flickr30kEntities/)
 
 2018-04-13: [NIPS ConvAI2 competition!](http://convai.io/) Train Dialogue Agents to chat about personal interests and get to know their dialogue partner -- using the PersonaChat dataset as a training source, with data and baseline code in ParlAI. Competition starts now! Ends September 1st.
-
 
 2018-03-13: Added [ParlAI-Messenger](http://parl.ai/static/docs/messenger.html), a new method for connecting human agents to a world in ParlAI using Facebook Messenger. Host your bots on Facebook Messenger to expose them to a broad audience!
 

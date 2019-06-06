@@ -68,11 +68,6 @@ NON_OVERRIDABLE_ARGS = {
 }
 
 
-def _is_nonempty_observation(obs):
-    """Check if an observation has no tokens in it."""
-    return len(obs.get('text_vec', [])) > 0
-
-
 def _fairseq_opt_wrapper(opt, skip_pretrained_embedding_loading=False):
     """
     Marshalls from a dict to a argparse.Namespace object for API compatibility.
@@ -106,15 +101,15 @@ def _fairseq_opt_wrapper(opt, skip_pretrained_embedding_loading=False):
         args.update_freq = options.eval_str_list(args.update_freq, int)
     if hasattr(args, "max_sentences_valid"):
         args.max_sentences_valid = args.max_sentences
-    if getattr(args, "truncate") == -1:
+    if args.truncate == -1:
         # some torch agents use positional embeddings, which must have a max length
-        setattr(args, "truncate", 1024)
+        args.truncate = 1024
     if not hasattr(args, "max_source_positions"):
         # fairseq uses a different name for this CLI parameter
         # Sometimes it's set in model defaults, but not for all models
-        setattr(args, "max_source_positions", getattr(args, "truncate"))
+        args.max_source_positions = args.truncate
         # if we don't have source lengths, we don't have target lengths
-        setattr(args, "max_target_positions", getattr(args, "truncate"))
+        args.max_target_positions = args.truncate
 
     # handle modelzoo if possible
     for k in ("encoder_embed_path", "decoder_embed_path"):
@@ -227,10 +222,7 @@ class FairseqAgent(TorchAgent):
     def add_cmdline_args(cls, argparser):
         """Add command-line arguments specifically for this agent."""
         # first we need to add the general torch agent operations
-        TorchAgent.add_cmdline_args(argparser)
-        # Dictionary construction stuff. Using the subclass in case we end up
-        # needing any fairseq specific things
-        cls.dictionary_class().add_cmdline_args(argparser)
+        super(FairseqAgent, cls).add_cmdline_args(argparser)
 
         # let's store any defaults that were overridden
         old_defaults = argparser._defaults
@@ -455,10 +447,13 @@ class FairseqAgent(TorchAgent):
                 del self.opt['override']
             json.dump(self.opt, handle)
 
+        # force save the dict
+        self.dict.save(path + '.dict', sort=False)
+
     def load(self, path):
         """Load using fairseq's checkpointing."""
         if self.trainer:
-            old_options = self.trainer.load_checkpoint(path)
+            old_options = self.trainer.load_checkpoint(path, self.args.reset_optimizer)
             self._check_opts_unchanged(old_options, self.opt)
         else:
             load_model_state(path, self.model)
@@ -475,6 +470,11 @@ class FairseqAgent(TorchAgent):
         super().reset()
         self.reset_metrics()
 
+    def is_valid(self, obs):
+        """Override from TorchAgent.
+        Check if an observation has no tokens in it."""
+        return len(obs.get('text_vec', [])) > 0
+
     def batchify(self, obs_batch):
         """
         Override parent batchify to set requirements for fairseq.
@@ -482,7 +482,7 @@ class FairseqAgent(TorchAgent):
         Fairseq depends on sorted batch inputs for a call to rnn.pad_packed_sequence.
         Fairseq models cannot handle zero length sentences
         """
-        return super().batchify(obs_batch, sort=True, is_valid=_is_nonempty_observation)
+        return super().batchify(obs_batch, sort=True)
 
     def _update_metrics(self, metrics, sample):
         if metrics is None:

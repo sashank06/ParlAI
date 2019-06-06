@@ -299,7 +299,7 @@ the labels aren't available:
             reply['text'] = ', '.join(self.observation['labels'])
         elif 'label_candidates' in self.observation:
             cands = self.observation['label_candidates']
-            reply['text'] = random.choice(cands)
+            reply['text'] = random.choice(list(cands))
         else:
             reply['text'] = "I don't know."
         return reply
@@ -338,7 +338,7 @@ Here are some examples:
    python examples/train_model.py -m drqa -t squad -bs 32 -mf /tmp/model_drqa
 
    #Tests an existing attentive LSTM model (DrQA reader) on the SQuAD dataset from our model zoo:
-   python examples/eval_model.py -t squad -mf "models:drqa/squad/model"
+   python examples/eval_model.py -t squad -mf "zoo:drqa/squad/model"
 
 
 The main flags are:
@@ -356,7 +356,7 @@ Of course every model has various parameters and hyperparameters to set in gener
 
 **Model Zoo**
 
-A new feature in ParlAI is that it also now maintains a *model zoo* of existing model files of agents that have been trained on tasks. See `here for details <https://github.com/facebookresearch/ParlAI/blob/master/parlai/zoo/model_list.py>`_.
+A new feature in ParlAI is that it also now maintains a *model zoo* of existing model files of agents that have been trained on tasks. See the devoted documentation section or `here for details <https://github.com/facebookresearch/ParlAI/blob/master/parlai/zoo/model_list.py>`_.
 
 The set of agents and models in the model zoo in ParlAI is continually growing from contributors.
 

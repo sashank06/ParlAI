@@ -8,11 +8,14 @@
 """
 
 import torchtext.vocab as vocab
+from parlai.core.build_data import modelzoo_path
+
+URL = 'https://dl.fbaipublicfiles.com/fasttext/vectors-english/crawl-300d-2M.vec.zip'
 
 
 def download(datapath):
-    vocab.Vectors(
+    return vocab.Vectors(
         name='crawl-300d-2M.vec',
-        url='https://s3-us-west-1.amazonaws.com/fasttext-vectors/crawl-300d-2M.vec.zip',
-        cache=datapath + '/models/fasttext_cc_vectors'
+        url=URL,
+        cache=modelzoo_path(datapath, 'models:fasttext_cc_vectors'),
     )

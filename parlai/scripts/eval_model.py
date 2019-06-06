@@ -16,7 +16,7 @@ Examples
   python eval_model.py -t "#CornellMovie" -m "ir_baseline" -mp "-lp 0.5"
 """
 
-from parlai.core.params import ParlaiParser
+from parlai.core.params import ParlaiParser, print_announcements
 from parlai.core.agents import create_agent
 from parlai.core.logs import TensorboardLogger
 from parlai.core.worlds import create_task
@@ -28,6 +28,7 @@ import random
 def setup_args(parser=None):
     if parser is None:
         parser = ParlaiParser(True, True, 'Evaluate a model')
+    parser.add_pytorch_datateacher_args()
     # Get command line arguments
     parser.add_argument('-ne', '--num-examples', type=int, default=-1)
     parser.add_argument('-d', '--display-examples', type='bool', default=False)
@@ -96,6 +97,9 @@ def eval_model(opt, printargs=None, print_parser=None):
           opt['task'], opt.get('datatype', 'N/A')))
     report = world.report()
     print(report)
+
+    print_announcements(opt)
+
     return report
 
 

@@ -46,6 +46,7 @@ import math
 def setup_args(parser=None):
     if parser is None:
         parser = ParlaiParser(True, True, 'Evaluate perplexity')
+    parser.add_pytorch_datateacher_args()
     parser.set_defaults(
         datatype='valid',
     )
@@ -246,4 +247,4 @@ if __name__ == '__main__':
     parser = setup_args()
     # try with --numthreads N to go fast
     opt = parser.parse_args()
-    eval_ppl(opt)
+    eval_ppl(opt, dict_file=opt.get('dict_file'))

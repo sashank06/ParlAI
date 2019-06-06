@@ -8,11 +8,14 @@
 # It's much more strict than our check for lint across the entire code base.
 
 set -e
-flake8 --version | grep '^3\.6\.' >/dev/null || \
+flake8 --version | grep '^3\.[6-9]\.' >/dev/null || \
     ( echo "Please install flake8 >=3.6.0." && false )
 
 CHANGED_FILES="$(git diff --name-only master... | grep '\.py$' | tr '\n' ' ')"
 if [ "$CHANGED_FILES" != "" ]
 then
-    exec flake8 $CHANGED_FILES
+    # soft complaint on too-long-lines
+    flake8 --select=E501 --show-source $CHANGED_FILES
+    # hard complaint on really long lines
+    exec flake8 --max-line-length=127 --show-source $CHANGED_FILES
 fi

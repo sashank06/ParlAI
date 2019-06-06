@@ -26,8 +26,10 @@ from collections import deque
 
 
 def get_pyt_dict_file(opt):
-    if os.path.exists(opt.get('dict_file', '')):
+    if opt.get('dict_file') and os.path.exists(opt.get('dict_file')):
         return opt['dict_file']
+    if opt.get('dict_file') is None and opt.get('model_file'):
+        return opt['model_file'] + '.dict'
     if not opt['pytorch_teacher_task']:
         opt['pytorch_teacher_task'] = opt['task']
     return os.path.join(
@@ -40,6 +42,7 @@ def get_pyt_dict_file(opt):
 def setup_args():
     from parlai.core.params import ParlaiParser
     parser = ParlaiParser(True, True, 'Builds a pytorch data file.')
+    parser.add_pytorch_datateacher_args()
     return dict_setup(parser)
 
 

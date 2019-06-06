@@ -21,8 +21,28 @@ def force_dir(path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
 
-data_dir = os.path.dirname(os.path.abspath(__file__)) + '/run_data'
-os.makedirs(data_dir, exist_ok=True)
+data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'run_data')
+core_dir = os.path.dirname(os.path.abspath(__file__))
+mturk_dir = os.path.dirname(core_dir)
+new_data_dir = os.path.join(mturk_dir, 'run_data')
+
+if os.path.exists(data_dir) and not os.path.exists(new_data_dir):
+    import shutil
+    acknowledge = input(
+        'run_data is being permanently moved from `{}`'
+        ' to `{}`. Enter anything to let this script copy '
+        'run_data over. It will leave the old data in case you want to double '
+        'check, though you should be able to safely remove '
+        '`{}`.'.format(data_dir, new_data_dir, data_dir)
+    )
+    shutil.copytree(data_dir, new_data_dir)
+    print('Copied. `{}` can now be safely deleted.'.format(data_dir))
+else:
+    new_data_dir = os.path.join(mturk_dir, 'run_data')
+    os.makedirs(new_data_dir, exist_ok=True)
+
+data_dir = new_data_dir
+
 
 # Run data table:
 CREATE_RUN_DATA_SQL_TABLE = (
@@ -729,6 +749,7 @@ class MTurkDataHandler():
 
     @staticmethod
     def get_conversation_data(task_group_id, conv_id, worker_id, is_sandbox):
+        """A poorly named function that gets conversation data for a worker"""
         result = {
             'had_data_dir': False,
             'had_run_dir': False,
@@ -760,5 +781,37 @@ class MTurkDataHandler():
         result['had_worker_file'] = True
         with open(target_filename, 'r') as target_file:
             result['data'] = json.load(target_file)
-        print(result)
+
         return result
+
+    @staticmethod
+    def get_full_conversation_data(task_group_id, conv_id, is_sandbox):
+        """Gets all conversation data saved for a world"""
+        target = 'sandbox' if is_sandbox else 'live'
+        return_data = {
+            'custom_data': {},
+            'worker_data': {},
+        }
+
+        target_dir = os.path.join(
+            data_dir, target, task_group_id, conv_id)
+        target_dir_custom = os.path.join(target_dir, 'custom')
+        custom_file = os.path.join(target_dir_custom, 'data.json')
+        if os.path.exists(custom_file):
+            custom_data = {}
+            with open(custom_file, 'r') as infile:
+                custom_data = json.load(infile)
+            pickle_file = os.path.join(target_dir_custom, 'data.pickle')
+            if os.path.exists(pickle_file):
+                with open(pickle_file, 'rb') as infile:
+                    custom_data['needs-pickle'] = pickle.load(infile)
+            return_data['custom_data'] = custom_data
+
+        target_dir_workers = os.path.join(target_dir, 'workers')
+        for w_file in os.listdir(target_dir_workers):
+            w_id = w_file.split('.json')[0]
+            worker_file = os.path.join(target_dir_workers, w_file)
+            with open(worker_file, 'r') as infile:
+                return_data['worker_data'][w_id] = json.load(infile)
+
+        return return_data

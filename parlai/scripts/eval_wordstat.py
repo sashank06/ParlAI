@@ -46,6 +46,7 @@ import random
 def setup_args(parser=None):
     if parser is None:
         parser = ParlaiParser(True, True, 'compute statistics from model predictions')
+    parser.add_pytorch_datateacher_args()
     DictionaryAgent.add_cmdline_args(parser)
     # Get command line arguments
     parser.add_argument('-ne', '--num-examples', type=int, default=-1)
@@ -63,7 +64,7 @@ def setup_args(parser=None):
     return parser
 
 
-def get_word_stats(text, agent_dict, bins=[0, 100, 1000, 100000]):
+def get_word_stats(text, agent_dict, bins=(0, 100, 1000, 100000)):
     """
     Function which takes text sequence and dict, returns word freq and length statistics
 
