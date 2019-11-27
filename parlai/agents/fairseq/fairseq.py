@@ -5,9 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-ParlAI has limited support for using models from
-`Fairseq <https://github.com/pytorch/fairseq>`_. Fairseq often supports more
-experimental seq2seq architectures with fast fp16 training.
+ParlAI has limited support for using models from `Fairseq.
+
+<https://github.com/pytorch/fairseq>`_. Fairseq often supports more experimental seq2seq
+architectures with fast fp16 training.
 
 Fairseq models can be used for many default tasks by combining a
 ``--arch`` flag. For example:
@@ -17,10 +18,11 @@ Fairseq models can be used for many default tasks by combining a
 
 
 from parlai.core.dict import DictionaryAgent
-from parlai.core.utils import argsort, padded_tensor
+from parlai.utils.misc import argsort, padded_tensor
 
 try:
     from fairseq import models, optim, criterions
+
     # this is a hack around versioning check because fairseq doesn't
     # announce version numbers yet
     # fairseq 0.5.0 has fp16_trainer, 0.6.0 does not
@@ -45,7 +47,7 @@ from fairseq.meters import AverageMeter
 
 from parlai.core.torch_agent import TorchAgent, Output
 from parlai.core.build_data import modelzoo_path
-from parlai.core.utils import round_sigfigs
+from parlai.utils.misc import round_sigfigs
 
 import argparse
 import torch
@@ -122,6 +124,7 @@ def _fairseq_opt_wrapper(opt, skip_pretrained_embedding_loading=False):
         else:
             # otherwise we may need to modelzoo adjust the path for fairseq
             import warnings
+
             warnings.warn("We recommend using --embedding-type instead")
             setattr(args, k, modelzoo_path(opt.get("datapath"), getattr(args, k)))
 
@@ -144,6 +147,7 @@ class _FairseqDictionary(DictionaryAgent):
     fairseq-py maintains backwards compatibility with fairseq-lua, which uses
     1 indexing.
     """
+
     # Name of our fake lua compatibility token
     _LUA = '__LUACOMPAT__'
 
@@ -199,7 +203,9 @@ class _FairseqDictionary(DictionaryAgent):
 
 
 class _ParlaiTask(FairseqTask):
-    """Skeleton task class needed for interaction with fairseq-py."""
+    """
+    Skeleton task class needed for interaction with fairseq-py.
+    """
 
     def __init__(self, dictionary):
         self.dict = dictionary
@@ -214,13 +220,17 @@ class _ParlaiTask(FairseqTask):
 
 
 class FairseqAgent(TorchAgent):
-    """Generic wrapper around fairseq for use in ParlAI"""
+    """
+    Generic wrapper around fairseq for use in ParlAI.
+    """
 
     metrics = {}
 
     @classmethod
     def add_cmdline_args(cls, argparser):
-        """Add command-line arguments specifically for this agent."""
+        """
+        Add command-line arguments specifically for this agent.
+        """
         # first we need to add the general torch agent operations
         super(FairseqAgent, cls).add_cmdline_args(argparser)
 
@@ -235,23 +245,20 @@ class FairseqAgent(TorchAgent):
 
         agent = argparser.add_argument_group('Fairseq Arguments')
         agent.add_argument(
-            '--fp16',
-            default=False,
-            type='bool',
-            help='Use fp16 training'
+            '--fp16', default=False, type='bool', help='Use fp16 training'
         )
         agent.add_argument(
             '--fp16-init-scale',
-            default=2**7,
+            default=2 ** 7,
             type=int,
-            help='default FP16 loss scale'
+            help='default FP16 loss scale',
         )
         agent.add_argument(
             '--seed',
             default=1,
             type=int,
             metavar='N',
-            help='pseudo random number generator seed'
+            help='pseudo random number generator seed',
         )
         agent.add_argument(
             '--skip-generation',
@@ -312,6 +319,8 @@ class FairseqAgent(TorchAgent):
 
         # one last time, restore any user set defaults
         argparser.set_defaults(**old_defaults)
+        # default weight decay in fairseq is zero not None
+        argparser.set_defaults(weight_decay=0.0)
 
     @staticmethod
     def dictionary_class():
@@ -325,8 +334,8 @@ class FairseqAgent(TorchAgent):
             # this is not a shared instance of this class, so do full initialization
 
             # check early if we're going to be loading the model from a checkpoint
-            model_file_exists = (
-                self.opt.get('model_file') and os.path.isfile(self.opt['model_file'])
+            model_file_exists = self.opt.get('model_file') and os.path.isfile(
+                self.opt['model_file']
             )
 
             # fairseq expects options to be in argparse format, instead of a dict
@@ -347,7 +356,8 @@ class FairseqAgent(TorchAgent):
             # meters for keeping track of loss, ppl, etc.
             self.meters = defaultdict(AverageMeter)
 
-            # actually construct the model and generator
+            # actually construct the criterion, model and generator
+            self.criterion = self.build_criterion()
             self.model = self.build_model()
 
             # Construct the generator and scorer
@@ -365,16 +375,13 @@ class FairseqAgent(TorchAgent):
             )
             self.scorer = SequenceScorer([self.model], self.dict)
 
-            # set up the grader and the trainer
-            self.criterion = criterions.build_criterion(self.args, self.task)
-
             # TODO: we might choose to add a --no-fp16 opt in the future to
             # explicitly disable fp16 instead
             if not self.args.fp16 and torch.cuda.get_device_capability(0)[0] >= 7:
                 print("Heads up: using --fp16 could be a lot faster!")
             if self.use_cuda:
                 self.trainer = trainer.Trainer(
-                    self.args, self.task, self.model, self.criterion, None,
+                    self.args, self.task, self.model, self.criterion, None
                 )
                 self.trainer._build_optimizer()
             else:
@@ -401,7 +408,9 @@ class FairseqAgent(TorchAgent):
         self.reset()
 
     def _check_opts_unchanged(self, saved_opts, current_opts):
-        """Verify that critical options do not differ in command line vs saved model"""
+        """
+        Verify that critical options do not differ in command line vs saved model.
+        """
         for k in NON_OVERRIDABLE_ARGS:
             if k not in saved_opts or k not in current_opts:
                 # if it's not an option needed by this fairseq model, don't stress
@@ -413,9 +422,10 @@ class FairseqAgent(TorchAgent):
 
     def build_model(self):
         """
-        Construct the actual Fairseq model. Default implementation is to use
-        Fairseq's arch builder, but this method may be overridden to build custom
-        models.
+        Construct the actual Fairseq model.
+
+        Default implementation is to use Fairseq's arch builder, but this method may be
+        overridden to build custom models.
         """
         model_class = models.ARCH_MODEL_REGISTRY[self.args.arch]
         model = model_class.build_model(self.args, self.task)
@@ -424,6 +434,13 @@ class FairseqAgent(TorchAgent):
                 model.encoder.embed_tokens.weight, self.args.embedding_type
             )
         return model
+
+    def build_criterion(self):
+        """
+        Set up the grader.
+        """
+        # TorchAgent will call this without ready=True before self.args is ready
+        return criterions.build_criterion(self.args, self.task)
 
     def share(self):
         shared = super().share()
@@ -436,7 +453,9 @@ class FairseqAgent(TorchAgent):
         return shared
 
     def save(self, path):
-        """Save using fairseq's checkpointing."""
+        """
+        Save using fairseq's checkpointing.
+        """
         if not path:
             return
         self.trainer.save_checkpoint(path, {'opt': self.opt, 'epoch': 0})
@@ -451,7 +470,9 @@ class FairseqAgent(TorchAgent):
         self.dict.save(path + '.dict', sort=False)
 
     def load(self, path):
-        """Load using fairseq's checkpointing."""
+        """
+        Load using fairseq's checkpointing.
+        """
         if self.trainer:
             old_options = self.trainer.load_checkpoint(path, self.args.reset_optimizer)
             self._check_opts_unchanged(old_options, self.opt)
@@ -466,13 +487,18 @@ class FairseqAgent(TorchAgent):
         super().shutdown()
 
     def reset(self):
-        """Reset observation and episode_done."""
+        """
+        Reset observation and episode_done.
+        """
         super().reset()
         self.reset_metrics()
 
     def is_valid(self, obs):
-        """Override from TorchAgent.
-        Check if an observation has no tokens in it."""
+        """
+        Override from TorchAgent.
+
+        Check if an observation has no tokens in it.
+        """
         return len(obs.get('text_vec', [])) > 0
 
     def batchify(self, obs_batch):
@@ -508,7 +534,8 @@ class FairseqAgent(TorchAgent):
                 self.meters[k].update(v, bsz)
 
     def train_step(self, batch):
-        """Process batch of inputs and targets and train on them.
+        """
+        Process batch of inputs and targets and train on them.
 
         :param batch: parlai.core.torch_agent.Batch, contains tensorized
                       version of observations.
@@ -522,7 +549,8 @@ class FairseqAgent(TorchAgent):
         self._update_metrics(metrics, sample)
 
     def eval_step(self, batch):
-        """Process batch of inputs.
+        """
+        Process batch of inputs.
 
         If the batch includes labels, calculate validation metrics as well.
         If --skip-generation is not set, return a prediction for each input.
@@ -559,7 +587,7 @@ class FairseqAgent(TorchAgent):
                 # repeat the input many times
                 xs = batch.text_vec[i].unsqueeze(0).expand(ncand, -1)
                 # some models crash if there's leading padding on every example
-                xs = xs[:, :batch.text_lengths[i]]
+                xs = xs[:, : batch.text_lengths[i]]
                 # and appropriately pack the outputs
                 ys, _ = padded_tensor(cands, self.NULL_IDX, self.use_cuda)
                 s = self._make_sample(xs=xs, ys=ys)
@@ -567,7 +595,7 @@ class FairseqAgent(TorchAgent):
                 scored = list(self.scorer.score_batched_itr([s], cuda=self.use_cuda))
                 scores = [s[3][0]['score'].item() for s in scored]
                 # intentional hanging comma here; argsort returns a list
-                ranked, = argsort(scores, batch.candidates[i], descending=True)
+                (ranked,) = argsort(scores, batch.candidates[i], descending=True)
                 reranked_cands.append(ranked)
 
         # Next generate freely to create our response
@@ -614,7 +642,9 @@ class FairseqAgent(TorchAgent):
         return responses
 
     def report(self):
-        """Return metrics calculated by the model."""
+        """
+        Return metrics calculated by the model.
+        """
         # if we haven't initialized yet, just return a dummy object
         if not hasattr(self, "trainer"):
             return {}
@@ -639,7 +669,9 @@ class FairseqAgent(TorchAgent):
         return output
 
     def reset_metrics(self):
-        """Reset metrics calculated by the model back to zero."""
+        """
+        Reset metrics calculated by the model back to zero.
+        """
         if not hasattr(self, "trainer"):
             # We haven't set up the trainer yet, so we don't have any metrics
             return
@@ -650,24 +682,32 @@ class FairseqAgent(TorchAgent):
                 self.trainer.meters[k].reset()
 
     def receive_metrics(self, metrics_dict):
-        """Update lr scheduler with validation loss."""
+        """
+        Update lr scheduler with validation loss.
+        """
         # TODO: this should be smarter
         self.trainer.lr_step(-1, metrics_dict["loss"])
 
     # Helper functions
     def _seq_length(self, xs):
-        """Compute length of the sequence (non-padded size)."""
+        """
+        Compute length of the sequence (non-padded size).
+        """
         return xs.ne(self.dict.pad_index).long().sum(dim=-1)
 
     def _right_shifted_ys(self, ys):
-        """Replace first token with EOS and shift remaining tokens right 1."""
+        """
+        Replace first token with EOS and shift remaining tokens right 1.
+        """
         result = torch.LongTensor(ys.size())
         result[:, 0] = self.dict.eos_index
         result[:, 1:] = ys[:, :-1]
         return result
 
     def _make_sample(self, batch=None, xs=None, ys=None):
-        """Generate a sample object that Fairseq expects."""
+        """
+        Generate a sample object that Fairseq expects.
+        """
         # add extra info to samples
         if batch is None and xs is None:
             raise ValueError("Must supply either batch or xs")
